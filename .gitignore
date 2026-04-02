@@ -1,0 +1,7 @@
+/target
+/.DS_Store
+/dist
+/.release-work
+/.codex
+/.directory
+/smoke

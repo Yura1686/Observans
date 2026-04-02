@@ -1,0 +1,17 @@
+[package]
+name = "observans-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+serde.workspace = true
+sysinfo.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+observans-bus = { path = "../observans-bus" }
+

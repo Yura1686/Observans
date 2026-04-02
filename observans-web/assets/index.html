@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Observans</title>
+<style>{{STYLES}}</style>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <h1 class="brand-title">Observans</h1>
+    </header>
+
+    <section class="main-grid">
+      <section class="video-panel panel">
+        <div class="video-shell">
+          <canvas id="stream-stage" class="stage" aria-label="observans live stage"></canvas>
+          <img id="stream-source" class="stream-source" src="" alt="observans stream source">
+          <div class="video-vignette"></div>
+          <div class="video-overlay"></div>
+        </div>
+
+        <div class="video-bottom">
+          <div class="status-line" id="status-line">system idle</div>
+          <div class="video-meta">
+            <strong id="video-res">--</strong>
+            <span id="video-meta-line">awaiting first light</span>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side-stack">
+        <section class="control-card panel">
+          <div class="card-title">Capture Deck</div>
+
+          <div class="control-body">
+            <div class="recording-halo">
+              <div class="recording-dot" id="recording-dot"></div>
+              <div>
+                <div class="recording-state" id="recording-state">ready to capture</div>
+                <div class="recording-time" id="recording-time">00:00</div>
+              </div>
+            </div>
+
+            <div class="button-row">
+              <button id="record-btn" class="action-btn rec" type="button">Rec</button>
+              <button id="stop-btn" class="action-btn stop" type="button" disabled>Stop</button>
+              <button id="save-btn" class="action-btn save" type="button" disabled>Save</button>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </section>
+
+    <section class="telemetry-grid">
+      <div class="metric panel">
+        <div class="metric-label">Time</div>
+        <div class="metric-value" id="clock">--:--:--</div>
+        <div class="metric-sub" id="date">--.--.----</div>
+      </div>
+
+      <div class="metric panel">
+        <div class="metric-label">CPU</div>
+        <div class="metric-value" id="cpu">--%</div>
+        <div class="metric-sub">processor load</div>
+        <div class="graph-wrap">
+          <svg id="cpu-graph" class="graph" viewBox="0 0 100 38" preserveAspectRatio="none"></svg>
+        </div>
+      </div>
+
+      <div class="metric panel">
+        <div class="metric-label">RAM</div>
+        <div class="metric-value" id="ram">--%</div>
+        <div class="metric-sub" id="ram-sub">-- / -- MB</div>
+        <div class="graph-wrap">
+          <svg id="ram-graph" class="graph" viewBox="0 0 100 38" preserveAspectRatio="none"></svg>
+        </div>
+      </div>
+
+      <div class="metric panel">
+        <div class="metric-label">Thermal</div>
+        <div class="metric-value" id="temp">N/A</div>
+        <div class="metric-sub" id="temp-sub">sensor fallback</div>
+      </div>
+
+      <div class="metric panel">
+        <div class="metric-label">Battery</div>
+        <div class="metric-value" id="batt">N/A</div>
+        <div class="metric-sub" id="batt-sub">--</div>
+      </div>
+
+      <div class="metric panel">
+        <div class="metric-label">Host</div>
+        <div class="metric-value" id="host">--</div>
+        <div class="metric-sub" id="host-sub">platform --</div>
+      </div>
+
+      <div class="metric panel">
+        <div class="metric-label">Clients</div>
+        <div class="metric-value" id="clients">0</div>
+        <div class="metric-sub" id="uptime">uptime --:--:--</div>
+      </div>
+
+      <div class="metric panel">
+        <div class="metric-label">Stream</div>
+        <div class="metric-value" id="res">--</div>
+        <div class="metric-sub" id="fps">-- / -- fps</div>
+        <div class="metric-sub" id="stream-meta">--</div>
+      </div>
+    </section>
+  </main>
+  <script>{{SCRIPT}}</script>
+</body>
+</html>
+
