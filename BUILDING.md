@@ -37,7 +37,7 @@ Outputs:
 - `dist/install.sh`
 - `dist/uninstall.sh`
 - `dist/install.sh` is stamped with the release repository slug
-- the archive contains `observans`, `Observans.sh`, `_observans_runtime`, `README.md`, and `build_meta.json`
+- the archive contains `Observans.sh`, `_observans_runtime/bin/observans`, `_observans_runtime/ffmpeg`, `README.md`, and `build_meta.json`
 
 ## Windows
 
@@ -56,6 +56,7 @@ Outputs:
 ## Notes
 
 - Bundled FFmpeg is resolved automatically at runtime when present next to the executable.
+- Linux bundles expose only `Observans.sh` at the top level; the actual ELF binary lives under `_observans_runtime/bin/observans`.
 - `OBSERVANS_FFMPEG` still overrides bundled/runtime lookup.
 - Official release builds are produced in GitHub Actions via `.github/workflows/release.yml`.
 - Pushes to `main` refresh one rolling pre-release in GitHub Releases.

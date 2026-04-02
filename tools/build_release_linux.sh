@@ -200,6 +200,7 @@ main() {
 
   local bundle_dir="$DIST_DIR/$BUNDLE_DIR"
   local runtime_dir="$bundle_dir/_observans_runtime"
+  local runtime_bin_dir="$runtime_dir/bin"
   local bundle_ffmpeg_dir="$runtime_dir/ffmpeg/bin"
   local build_meta="$runtime_dir/build_meta.json"
   local binary_src="$ROOT_DIR/target/$RUST_TARGET/release/$BINARY_NAME"
@@ -212,14 +213,14 @@ main() {
   release_repo="$(resolve_release_repository)"
 
   rm -rf "$bundle_dir" "$extracted_dir"
-  mkdir -p "$bundle_ffmpeg_dir" "$extracted_dir"
+  mkdir -p "$bundle_ffmpeg_dir" "$runtime_bin_dir" "$extracted_dir"
 
-  cp "$binary_src" "$bundle_dir/$ENTRY_EXECUTABLE"
-  chmod +x "$bundle_dir/$ENTRY_EXECUTABLE"
+  cp "$binary_src" "$runtime_bin_dir/$ENTRY_EXECUTABLE"
+  chmod +x "$runtime_bin_dir/$ENTRY_EXECUTABLE"
   cp "$ROOT_DIR/RELEASE_README.md" "$bundle_dir/README.md"
   case "$LAUNCHER_KIND" in
     shell)
-      write_linux_launcher "$bundle_dir/$DISPLAY_NAME.sh" "$ENTRY_EXECUTABLE"
+      write_linux_launcher "$bundle_dir/$DISPLAY_NAME.sh" "_observans_runtime/bin/$ENTRY_EXECUTABLE"
       ;;
     none)
       ;;

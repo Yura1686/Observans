@@ -91,6 +91,7 @@ fn release_readme_mentions_click_targets() {
 
     assert!(readme.contains("observans.exe"));
     assert!(readme.contains("Observans.sh"));
+    assert!(!readme.contains("./observans"));
 }
 
 #[test]

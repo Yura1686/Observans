@@ -11,8 +11,10 @@ pub fn resolve_ffmpeg_binary(
     }
 
     if let Some(executable) = current_exe {
-        let candidate = bundled_ffmpeg_path(&executable, platform_name);
-        if candidate.is_file() {
+        if let Some(candidate) = bundled_ffmpeg_candidates(&executable, platform_name)
+            .into_iter()
+            .find(|candidate| candidate.is_file())
+        {
             return candidate;
         }
     }
@@ -29,13 +31,31 @@ pub fn resolve_ffmpeg_for_current_process(platform_name: &str) -> PathBuf {
 }
 
 pub fn bundled_ffmpeg_path(executable: &Path, platform_name: &str) -> PathBuf {
+    bundled_ffmpeg_candidates(executable, platform_name)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| {
+            Path::new(".")
+                .join("_observans_runtime")
+                .join("ffmpeg")
+                .join("bin")
+                .join(ffmpeg_executable_name(platform_name))
+        })
+}
+
+fn bundled_ffmpeg_candidates(executable: &Path, platform_name: &str) -> Vec<PathBuf> {
     executable
         .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("_observans_runtime")
-        .join("ffmpeg")
-        .join("bin")
-        .join(ffmpeg_executable_name(platform_name))
+        .into_iter()
+        .flat_map(|directory| directory.ancestors())
+        .map(|directory| {
+            directory
+                .join("_observans_runtime")
+                .join("ffmpeg")
+                .join("bin")
+                .join(ffmpeg_executable_name(platform_name))
+        })
+        .collect()
 }
 
 pub fn ffmpeg_executable_name(platform_name: &str) -> &'static str {

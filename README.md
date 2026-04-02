@@ -67,6 +67,7 @@ Both release bundles contain:
 - `_observans_runtime/build_meta.json`
 
 Linux bundles also include `Observans.sh`, which launches the bundled `observans` binary.
+The actual Linux runtime binary now lives inside `_observans_runtime/bin/observans`, so the extracted folder has a single visible launcher for normal use.
 
 GitHub Releases keep one rolling pre-release that is refreshed from `main` and publishes only 2 runnable archives: one for Linux and one for Windows.
 

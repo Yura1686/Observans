@@ -20,7 +20,7 @@ http://127.0.0.1:8080/
 
 - Interactive terminal: startup camera picker is shown unless `--device` or `--no-camera-select` is passed.
 - Non-interactive launch: picker is skipped and Observans boots directly.
-- `--device auto`: Observans resolves the first discovered camera and falls back to the platform default if discovery returns nothing.
+- `--device auto`: Observans resolves the first discovered camera and retries safer driver defaults if the first requested mode fails.
 - Unsupported operating systems exit immediately with a clear startup error.
 
 ## Supported device notes
@@ -48,7 +48,6 @@ Linux release users can:
 
 - unpack `Observans-linux-x64.tar.gz`
 - run `Observans.sh` for the launcher path
-- or start `./observans` directly from a terminal
 
 Windows release users can:
 

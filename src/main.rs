@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
 
     let config = Config::from_args_with_bootstrap(std::env::args())?;
     let metrics = SharedMetrics::new(&config);
-    let (frame_tx, _frame_rx) = create_bus(16);
+    let (frame_tx, _frame_rx) = create_bus(4);
 
     let _sampler = spawn_system_sampler(metrics.clone());
     let _capture = start_capture(config.clone(), frame_tx.clone(), metrics.clone());
