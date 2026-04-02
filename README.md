@@ -68,7 +68,7 @@ Both release bundles contain:
 
 Linux bundles also include `Observans.sh`, which launches the bundled `observans` binary.
 
-GitHub Releases publish only the runnable archives and their `.sha256` files.
+GitHub Releases publish only the 2 runnable archives: one for Linux and one for Windows.
 
 ## Release Builds
 
