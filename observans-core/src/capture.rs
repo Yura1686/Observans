@@ -159,8 +159,24 @@ fn build_capture_attempts(config: &Config, device: &str) -> Vec<CaptureAttempt> 
     }
 }
 
+// FIX: added mjpeg-first attempt and dedup; dshow COM crashes (0xc0000005) were caused by
+// -fflags nobuffer / -flags low_delay which are now omitted for dshow (see build_ffmpeg_args).
 fn build_dshow_attempts(config: &Config, device: &str) -> Vec<CaptureAttempt> {
-    vec![
+    let attempts = vec![
+        // Try mjpeg input format first — most webcams expose it and it avoids
+        // colour-space negotiation that causes "Could not set video options".
+        CaptureAttempt {
+            label: "mjpeg input".to_string(),
+            args: build_ffmpeg_args(
+                config,
+                device,
+                CaptureProfile {
+                    include_framerate: true,
+                    include_video_size: true,
+                    input_format: Some("mjpeg"),
+                },
+            ),
+        },
         CaptureAttempt {
             label: "requested mode".to_string(),
             args: build_ffmpeg_args(config, device, CaptureProfile::requested_mode()),
@@ -189,7 +205,9 @@ fn build_dshow_attempts(config: &Config, device: &str) -> Vec<CaptureAttempt> {
                 },
             ),
         },
-    ]
+    ];
+    // Deduplicate so identical arg-lists are not run twice.
+    dedup_attempts(attempts)
 }
 
 fn build_v4l2_attempts(config: &Config, device: &str) -> Vec<CaptureAttempt> {
@@ -256,22 +274,33 @@ fn dedup_attempts(attempts: Vec<CaptureAttempt>) -> Vec<CaptureAttempt> {
 }
 
 fn build_ffmpeg_args(config: &Config, device: &str, profile: CaptureProfile<'_>) -> Vec<String> {
+    let is_dshow = config.capture_format() == "dshow";
+
     let mut args = vec![
         "-hide_banner".to_string(),
         "-nostdin".to_string(),
         "-loglevel".to_string(),
         "warning".to_string(),
-        "-fflags".to_string(),
-        "nobuffer".to_string(),
-        "-flags".to_string(),
-        "low_delay".to_string(),
+    ];
+
+    // FIX: -fflags nobuffer and -flags low_delay trigger STATUS_ACCESS_VIOLATION
+    // (exit 0xc0000005) inside the dshow COM layer on Windows. These flags are
+    // safe and beneficial for v4l2 but must be omitted for dshow.
+    if !is_dshow {
+        args.push("-fflags".to_string());
+        args.push("nobuffer".to_string());
+        args.push("-flags".to_string());
+        args.push("low_delay".to_string());
+    }
+
+    args.extend([
         "-thread_queue_size".to_string(),
         "4".to_string(),
         "-f".to_string(),
         config.capture_format().to_string(),
-    ];
+    ]);
 
-    if config.capture_format() == "dshow" {
+    if is_dshow {
         args.push("-rtbufsize".to_string());
         args.push("128M".to_string());
     }
