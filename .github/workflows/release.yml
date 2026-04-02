@@ -3,8 +3,12 @@ name: release
 on:
   workflow_dispatch:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+
+concurrency:
+  group: release-rolling-main
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -68,10 +72,12 @@ jobs:
             dist/Observans-windows-x64.zip
 
   publish-release:
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: observans-linux-x64
@@ -80,8 +86,23 @@ jobs:
         with:
           name: observans-windows-x64
           path: release-assets/windows
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release-assets/linux/*
-            release-assets/windows/*
+      - name: Refresh rolling release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete rolling-main --yes --cleanup-tag || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f rolling-main "$GITHUB_SHA"
+          git push origin refs/tags/rolling-main --force
+      - name: Publish rolling pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create rolling-main \
+            release-assets/linux/Observans-linux-x64.tar.gz \
+            release-assets/windows/Observans-windows-x64.zip \
+            --title "Rolling Release" \
+            --notes "Automated pre-release from the latest main branch build." \
+            --target "$GITHUB_SHA" \
+            --prerelease

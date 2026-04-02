@@ -58,4 +58,5 @@ Outputs:
 - Bundled FFmpeg is resolved automatically at runtime when present next to the executable.
 - `OBSERVANS_FFMPEG` still overrides bundled/runtime lookup.
 - Official release builds are produced in GitHub Actions via `.github/workflows/release.yml`.
-- GitHub Releases publish only the 2 runnable archives; `.sha256`, `install.sh`, and `uninstall.sh` stay local tooling outputs.
+- Pushes to `main` refresh one rolling pre-release in GitHub Releases.
+- That rolling release publishes only the 2 runnable archives; `.sha256`, `install.sh`, and `uninstall.sh` stay local tooling outputs.

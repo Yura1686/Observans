@@ -56,3 +56,5 @@ Windows release users can:
 - run `observans.exe`
 
 In both release bundles, Observans prints the local URL in the console and does not open your browser automatically.
+
+The GitHub Releases page is refreshed automatically from the latest successful `main` build and keeps one rolling pre-release with these two archives.

@@ -98,7 +98,7 @@ if ($config.TargetOs -ne "windows") {
     throw "target $TargetId is not a windows target"
 }
 if ($config.LauncherKind -ne "none") {
-    throw "unsupported launcher kind for $TargetId: $($config.LauncherKind)"
+    throw "unsupported launcher kind for ${TargetId}: $($config.LauncherKind)"
 }
 
 New-Item -ItemType Directory -Force -Path $DistDir, (Join-Path $WorkDir "downloads"), (Join-Path $WorkDir "extracted") | Out-Null

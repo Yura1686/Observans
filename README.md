@@ -68,7 +68,7 @@ Both release bundles contain:
 
 Linux bundles also include `Observans.sh`, which launches the bundled `observans` binary.
 
-GitHub Releases publish only the 2 runnable archives: one for Linux and one for Windows.
+GitHub Releases keep one rolling pre-release that is refreshed from `main` and publishes only 2 runnable archives: one for Linux and one for Windows.
 
 ## Release Builds
 
@@ -82,6 +82,6 @@ bash tools/build_release_linux.sh
 ./tools/build_release_windows.ps1
 ```
 
-The Linux packager also emits local repo-tooling `dist/install.sh` and `dist/uninstall.sh`, but those are not attached to GitHub Releases.
+The Linux packager also emits local repo-tooling `dist/install.sh` and `dist/uninstall.sh`, but the rolling GitHub Release still publishes only the 2 OS archives.
 
 See [BUILDING.md](BUILDING.md) for release packaging details.

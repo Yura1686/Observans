@@ -92,3 +92,15 @@ fn release_readme_mentions_click_targets() {
     assert!(readme.contains("observans.exe"));
     assert!(readme.contains("Observans.sh"));
 }
+
+#[test]
+fn release_workflow_uses_main_branch_rolling_release() {
+    let workflow = include_str!("../.github/workflows/release.yml");
+
+    assert!(workflow.contains("branches:"));
+    assert!(workflow.contains("- main"));
+    assert!(workflow.contains("rolling-main"));
+    assert!(workflow.contains("gh release create rolling-main"));
+    assert!(!workflow.contains("tags:"));
+    assert!(!workflow.contains(".sha256"));
+}

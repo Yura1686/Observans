@@ -2,6 +2,8 @@
 
 This bundle is ready to run after extraction on Linux or Windows.
 
+GitHub keeps this archive in a rolling pre-release that is refreshed from the latest successful `main` build.
+
 ## Windows
 
 1. Unzip `Observans-windows-x64.zip`
