@@ -1,9 +1,11 @@
 {
   "display_name": "Observans",
   "binary_name": "observans",
-  "ffmpeg_source": {
-    "base_url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest",
-    "checksums_asset": "checksums.sha256"
+  "ffmpeg_sources": {
+    "btbn_latest": {
+      "base_url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest",
+      "checksums_asset": "checksums.sha256"
+    }
   },
   "targets": {
     "linux-x64": {
@@ -14,6 +16,8 @@
       "archive_format": "tar.gz",
       "bundle_dir": "Observans-linux-x64",
       "entry_executable": "observans",
+      "launcher_kind": "shell",
+      "ffmpeg_source": "btbn_latest",
       "ffmpeg_asset": "ffmpeg-master-latest-linux64-gpl.tar.xz",
       "ffmpeg_sha256": "auto"
     },
@@ -25,9 +29,10 @@
       "archive_format": "zip",
       "bundle_dir": "Observans-windows-x64",
       "entry_executable": "observans.exe",
+      "launcher_kind": "none",
+      "ffmpeg_source": "btbn_latest",
       "ffmpeg_asset": "ffmpeg-master-latest-win64-gpl.zip",
       "ffmpeg_sha256": "auto"
     }
   }
 }
-

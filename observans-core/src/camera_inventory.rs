@@ -1,4 +1,4 @@
-use crate::platform::current_platform;
+use crate::platform::require_current_platform;
 use anyhow::Result;
 use std::collections::BTreeSet;
 use std::fs;
@@ -14,12 +14,11 @@ pub struct CameraInfo {
 }
 
 pub fn enumerate_cameras(ffmpeg_path: Option<&Path>) -> Result<Vec<CameraInfo>> {
-    let platform_name = current_platform();
+    let platform_name = require_current_platform()?;
     let cameras = match platform_name {
         "linux" => enumerate_linux_cameras()?,
         "windows" => enumerate_ffmpeg_cameras(platform_name, ffmpeg_path)?,
-        "macos" => enumerate_ffmpeg_cameras(platform_name, ffmpeg_path)?,
-        _ => Vec::new(),
+        _ => unreachable!(),
     };
 
     Ok(dedup_cameras(cameras))
@@ -68,16 +67,7 @@ fn enumerate_ffmpeg_cameras(
             "-i",
             "dummy",
         ],
-        "macos" => vec![
-            "-hide_banner",
-            "-f",
-            "avfoundation",
-            "-list_devices",
-            "true",
-            "-i",
-            "",
-        ],
-        _ => return Ok(Vec::new()),
+        _ => unreachable!(),
     };
 
     let output = Command::new(ffmpeg_bin).args(args).output()?;
@@ -138,7 +128,6 @@ pub fn parse_v4l2_devices(text: &str) -> Vec<CameraInfo> {
 pub fn parse_ffmpeg_device_list(platform_name: &str, text: &str) -> Vec<CameraInfo> {
     match platform_name {
         "windows" => parse_dshow_devices(text),
-        "macos" => parse_avfoundation_devices(text),
         _ => Vec::new(),
     }
 }
@@ -174,55 +163,11 @@ fn parse_dshow_devices(text: &str) -> Vec<CameraInfo> {
     cameras
 }
 
-fn parse_avfoundation_devices(text: &str) -> Vec<CameraInfo> {
-    let mut in_video_section = false;
-    let mut cameras = Vec::new();
-
-    for line in text.lines() {
-        let lower = line.to_ascii_lowercase();
-        if lower.contains("avfoundation video devices") {
-            in_video_section = true;
-            continue;
-        }
-        if lower.contains("avfoundation audio devices") {
-            in_video_section = false;
-            continue;
-        }
-        if !in_video_section {
-            continue;
-        }
-
-        if let Some((index, name)) = extract_bracketed_device(line) {
-            cameras.push(CameraInfo {
-                device: index.to_string(),
-                name: name.to_string(),
-                backend: "avfoundation".to_string(),
-                details: "macos camera".to_string(),
-            });
-        }
-    }
-
-    cameras
-}
-
 fn extract_quoted(line: &str) -> Option<&str> {
     let start = line.find('"')?;
     let rest = &line[start + 1..];
     let end = rest.find('"')?;
     Some(&rest[..end])
-}
-
-fn extract_bracketed_device(line: &str) -> Option<(&str, &str)> {
-    let index_start = line.rfind('[')?;
-    let rest = &line[index_start + 1..];
-    let index_end = rest.find(']')?;
-    let index = &rest[..index_end];
-    let name = rest[index_end + 1..].trim();
-    if name.is_empty() || !index.chars().all(|ch| ch.is_ascii_digit()) {
-        return None;
-    }
-
-    Some((index, name))
 }
 
 fn scan_linux_video_devices() -> Vec<CameraInfo> {
@@ -308,19 +253,6 @@ HD Pro Webcam C920 (usb-0000:00:14.0-8):\n\
         let cameras = parse_ffmpeg_device_list("windows", text);
         assert_eq!(cameras.len(), 1);
         assert_eq!(cameras[0].device, "video=Integrated Camera");
-    }
-
-    #[test]
-    fn parses_macos_ffmpeg_inventory() {
-        let text = "\
-[AVFoundation indev @ 0x7fa] AVFoundation video devices:\n\
-[AVFoundation indev @ 0x7fa] [0] FaceTime HD Camera\n\
-[AVFoundation indev @ 0x7fa] AVFoundation audio devices:\n";
-
-        let cameras = parse_ffmpeg_device_list("macos", text);
-        assert_eq!(cameras.len(), 1);
-        assert_eq!(cameras[0].device, "0");
-        assert_eq!(cameras[0].name, "FaceTime HD Camera");
     }
 
     #[test]

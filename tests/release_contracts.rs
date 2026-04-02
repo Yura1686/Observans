@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 struct ReleaseManifest {
     binary_name: String,
     display_name: String,
-    ffmpeg_source: FfmpegSource,
+    ffmpeg_sources: BTreeMap<String, FfmpegSource>,
     targets: BTreeMap<String, ReleaseTarget>,
 }
 
@@ -21,6 +21,8 @@ struct ReleaseTarget {
     archive_format: String,
     bundle_dir: String,
     entry_executable: String,
+    launcher_kind: String,
+    ffmpeg_source: String,
     ffmpeg_asset: String,
     ffmpeg_sha256: String,
     rust_target: String,
@@ -37,17 +39,23 @@ fn manifest_defines_linux_and_windows_targets() {
 
     assert_eq!(manifest.binary_name, "observans");
     assert_eq!(manifest.display_name, "Observans");
-    assert!(manifest
-        .ffmpeg_source
+    assert_eq!(manifest.targets.len(), 2);
+    let ffmpeg_source = manifest
+        .ffmpeg_sources
+        .get("btbn_latest")
+        .expect("btbn_latest source");
+    assert!(ffmpeg_source
         .base_url
         .contains("github.com/BtbN/FFmpeg-Builds"));
-    assert_eq!(manifest.ffmpeg_source.checksums_asset, "checksums.sha256");
+    assert_eq!(ffmpeg_source.checksums_asset, "checksums.sha256");
 
     let linux = manifest.targets.get("linux-x64").expect("linux target");
     assert_eq!(linux.artifact_name, "Observans-linux-x64.tar.gz");
     assert_eq!(linux.archive_format, "tar.gz");
     assert_eq!(linux.bundle_dir, "Observans-linux-x64");
     assert_eq!(linux.entry_executable, "observans");
+    assert_eq!(linux.launcher_kind, "shell");
+    assert_eq!(linux.ffmpeg_source, "btbn_latest");
     assert_eq!(linux.rust_target, "x86_64-unknown-linux-musl");
     assert_eq!(
         linux.ffmpeg_asset,
@@ -60,6 +68,8 @@ fn manifest_defines_linux_and_windows_targets() {
     assert_eq!(windows.archive_format, "zip");
     assert_eq!(windows.bundle_dir, "Observans-windows-x64");
     assert_eq!(windows.entry_executable, "observans.exe");
+    assert_eq!(windows.launcher_kind, "none");
+    assert_eq!(windows.ffmpeg_source, "btbn_latest");
     assert_eq!(windows.rust_target, "x86_64-pc-windows-msvc");
     assert_eq!(windows.ffmpeg_asset, "ffmpeg-master-latest-win64-gpl.zip");
     assert!(!windows.ffmpeg_sha256.is_empty());
@@ -73,4 +83,12 @@ fn linux_installer_block_matches_manifest() {
 
     assert!(install_script.contains(&format!("ARTIFACT_LINUX_X64=\"{}\"", linux.artifact_name)));
     assert!(install_script.contains("FFMPEG_BIN_REL=\"ffmpeg/bin/ffmpeg\""));
+}
+
+#[test]
+fn release_readme_mentions_click_targets() {
+    let readme = include_str!("../RELEASE_README.md");
+
+    assert!(readme.contains("observans.exe"));
+    assert!(readme.contains("Observans.sh"));
 }

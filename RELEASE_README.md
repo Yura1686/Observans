@@ -1,40 +1,30 @@
 # Observans Release
 
-This bundle is ready to run after extraction.
+This bundle is ready to run after extraction on Linux or Windows.
 
 ## Windows
 
 1. Unzip `Observans-windows-x64.zip`
 2. Open the extracted folder
 3. Run `observans.exe`
-4. Open `http://127.0.0.1:8080/`
+4. Watch the console for the local URL, for example `http://127.0.0.1:8080/`
+5. Open that URL manually in your browser
 
 ## Linux
 
-Option 1:
+1. Unpack `Observans-linux-x64.tar.gz`
+2. Open the extracted folder
+3. Run `Observans.sh` for the launcher path
+4. Or run `./observans` directly from a terminal
+5. Watch the console for the local URL, for example `http://127.0.0.1:8080/`
+6. Open that URL manually in your browser
 
-```bash
-bash install.sh
-```
-
-Option 2:
-
-```bash
-tar -xzf Observans-linux-x64.tar.gz
-cd Observans-linux-x64
-./observans
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8080/
-```
+The Linux bundle also includes the raw `observans` binary next to the launcher.
 
 ## Notes
 
 - Bundled FFmpeg is included in `_observans_runtime/ffmpeg/bin`
 - `OBSERVANS_FFMPEG` overrides bundled FFmpeg lookup
 - Startup camera picker appears only in interactive terminals
+- Observans does not open your browser automatically
 - `observans --help` shows all runtime flags
-

@@ -31,34 +31,17 @@ jobs:
           mkdir -p smoke/linux
           tar -xzf dist/Observans-linux-x64.tar.gz -C smoke/linux
           test -x smoke/linux/Observans-linux-x64/observans
+          test -x smoke/linux/Observans-linux-x64/Observans.sh
           test -x smoke/linux/Observans-linux-x64/_observans_runtime/ffmpeg/bin/ffmpeg
-          smoke/linux/Observans-linux-x64/observans --help
-      - name: Smoke Linux installer
-        run: |
-          mkdir -p smoke/http-root smoke/install-bin
-          cp dist/Observans-linux-x64.tar.gz dist/Observans-linux-x64.tar.gz.sha256 dist/install.sh smoke/http-root/
-          python3 -m http.server 18080 --directory smoke/http-root >/tmp/observans-http.log 2>&1 &
-          server_pid=$!
-          trap 'kill $server_pid' EXIT
-          OBSERVANS_RELEASE_BASE_URL="http://127.0.0.1:18080" \
-          OBSERVANS_INSTALL_DIR="$PWD/smoke/install-root" \
-          OBSERVANS_BIN_DIR="$PWD/smoke/install-bin" \
-          bash smoke/http-root/install.sh
-          test -x "$PWD/smoke/install-root/observans"
-          test -x "$PWD/smoke/install-root/_observans_runtime/ffmpeg/bin/ffmpeg"
-          "$PWD/smoke/install-bin/observans" --help
-          OBSERVANS_INSTALL_DIR="$PWD/smoke/install-root" \
-          OBSERVANS_BIN_DIR="$PWD/smoke/install-bin" \
-          bash ./dist/uninstall.sh
-          test ! -e "$PWD/smoke/install-root"
+          test -f smoke/linux/Observans-linux-x64/README.md
+          test -f smoke/linux/Observans-linux-x64/_observans_runtime/build_meta.json
+          smoke/linux/Observans-linux-x64/Observans.sh --help
       - uses: actions/upload-artifact@v4
         with:
           name: observans-linux-x64
           path: |
             dist/Observans-linux-x64.tar.gz
             dist/Observans-linux-x64.tar.gz.sha256
-            dist/install.sh
-            dist/uninstall.sh
 
   build-windows:
     runs-on: windows-latest
@@ -77,6 +60,8 @@ jobs:
           Expand-Archive -Path dist/Observans-windows-x64.zip -DestinationPath smoke/windows -Force
           if (-not (Test-Path smoke/windows/Observans-windows-x64/observans.exe)) { throw "observans.exe missing" }
           if (-not (Test-Path smoke/windows/Observans-windows-x64/_observans_runtime/ffmpeg/bin/ffmpeg.exe)) { throw "bundled ffmpeg.exe missing" }
+          if (-not (Test-Path smoke/windows/Observans-windows-x64/README.md)) { throw "README.md missing" }
+          if (-not (Test-Path smoke/windows/Observans-windows-x64/_observans_runtime/build_meta.json)) { throw "build_meta.json missing" }
           & smoke/windows/Observans-windows-x64/observans.exe --help
       - uses: actions/upload-artifact@v4
         with:

@@ -113,7 +113,6 @@ fn build_ffmpeg_args(config: &Config, device: &str) -> Vec<String> {
 fn normalize_device_for_platform(config: &Config, device: &str) -> String {
     match config.capture_format() {
         "dshow" if !device.starts_with("video=") => format!("video={device}"),
-        "avfoundation" if !device.contains(':') => format!("{device}:none"),
         _ => device.to_string(),
     }
 }

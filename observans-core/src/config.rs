@@ -1,6 +1,6 @@
 use crate::bootstrap::patch_args_for_camera_selection;
 use crate::camera_inventory::enumerate_cameras;
-use crate::platform::{capture_format_for, current_platform, default_device_for};
+use crate::platform::{capture_format_for, default_device_for, require_current_platform};
 use crate::runtime::resolve_ffmpeg_for_current_process;
 use crate::tui::choose_camera;
 use anyhow::Result;
@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 #[derive(Debug, Clone, Parser)]
 #[command(
     name = "observans",
-    about = "Cross-platform camera streaming with a startup TUI"
+    about = "Linux and Windows camera streaming with a startup TUI"
 )]
 pub struct Config {
     #[arg(long, default_value_t = 8080)]
@@ -49,8 +49,9 @@ impl Config {
             .into_iter()
             .map(|arg| arg.to_string())
             .collect::<Vec<_>>();
+        let platform_name = require_current_platform()?;
         let interactive = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
-        let ffmpeg_path = resolve_ffmpeg_for_current_process(current_platform());
+        let ffmpeg_path = resolve_ffmpeg_for_current_process(platform_name);
         let patched_args = patch_args_for_camera_selection(
             raw_args,
             interactive,
@@ -74,15 +75,17 @@ impl Config {
     }
 
     pub fn platform_name(&self) -> &'static str {
-        current_platform()
+        require_current_platform().expect("unsupported platform should be rejected during startup")
     }
 
     pub fn capture_format(&self) -> &'static str {
         capture_format_for(self.platform_name())
+            .expect("unsupported platform should be rejected during startup")
     }
 
     pub fn platform_default_device(&self) -> &'static str {
         default_device_for(self.platform_name())
+            .expect("unsupported platform should be rejected during startup")
     }
 
     pub fn bind_addr(&self) -> SocketAddr {

@@ -21,12 +21,12 @@ http://127.0.0.1:8080/
 - Interactive terminal: startup camera picker is shown unless `--device` or `--no-camera-select` is passed.
 - Non-interactive launch: picker is skipped and Observans boots directly.
 - `--device auto`: Observans resolves the first discovered camera and falls back to the platform default if discovery returns nothing.
+- Unsupported operating systems exit immediately with a clear startup error.
 
-## Cross-platform device notes
+## Supported device notes
 
 - Linux capture format: `v4l2`
 - Windows capture format: `dshow`
-- macOS capture format: `avfoundation`
 
 ## FFmpeg override
 
@@ -46,11 +46,13 @@ Runtime lookup order is:
 
 Linux release users can:
 
-- run `install.sh`
-- or unpack `Observans-linux-x64.tar.gz` and start `./observans`
+- unpack `Observans-linux-x64.tar.gz`
+- run `Observans.sh` for the launcher path
+- or start `./observans` directly from a terminal
 
 Windows release users can:
 
 - unzip `Observans-windows-x64.zip`
 - run `observans.exe`
 
+In both release bundles, Observans prints the local URL in the console and does not open your browser automatically.

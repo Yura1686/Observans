@@ -1,6 +1,6 @@
 # Observans
 
-Observans vNext is a cross-platform camera streaming workspace with:
+Observans vNext is a Linux and Windows camera streaming workspace with:
 
 - a startup CLI/TUI camera picker
 - a local browser UI in the original twilight style
@@ -45,6 +45,13 @@ Notes:
 cargo test --workspace
 ```
 
+## Supported Platforms
+
+- Linux
+- Windows
+
+Unsupported operating systems fail at startup with a clear error.
+
 ## Release Artifacts
 
 Official release builds target x86_64 on:
@@ -54,12 +61,14 @@ Official release builds target x86_64 on:
 
 Both release bundles contain:
 
-- the Observans executable
+- the runnable entrypoint for that OS
 - `_observans_runtime/ffmpeg/bin/...`
 - a release-focused `README.md`
 - `_observans_runtime/build_meta.json`
 
-Linux also ships release-level `install.sh` and `uninstall.sh`.
+Linux bundles also include `Observans.sh`, which launches the bundled `observans` binary.
+
+GitHub Releases publish only the runnable archives and their `.sha256` files.
 
 ## Release Builds
 
@@ -72,5 +81,7 @@ bash tools/build_release_linux.sh
 ```powershell
 ./tools/build_release_windows.ps1
 ```
+
+The Linux packager also emits local repo-tooling `dist/install.sh` and `dist/uninstall.sh`, but those are not attached to GitHub Releases.
 
 See [BUILDING.md](BUILDING.md) for release packaging details.

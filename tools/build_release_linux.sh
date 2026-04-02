@@ -24,7 +24,7 @@ import sys
 manifest_path, target_id = sys.argv[1], sys.argv[2]
 payload = json.load(open(manifest_path, encoding="utf-8"))
 target = payload["targets"][target_id]
-source = payload["ffmpeg_source"]
+source = payload["ffmpeg_sources"][target["ffmpeg_source"]]
 pairs = {
     "DISPLAY_NAME": payload["display_name"],
     "BINARY_NAME": payload["binary_name"],
@@ -34,6 +34,8 @@ pairs = {
     "ARCHIVE_FORMAT": target["archive_format"],
     "BUNDLE_DIR": target["bundle_dir"],
     "ENTRY_EXECUTABLE": target["entry_executable"],
+    "LAUNCHER_KIND": target["launcher_kind"],
+    "FFMPEG_SOURCE_ID": target["ffmpeg_source"],
     "FFMPEG_ASSET": target["ffmpeg_asset"],
     "FFMPEG_SHA256": target["ffmpeg_sha256"],
     "FFMPEG_BASE_URL": source["base_url"],
@@ -95,11 +97,28 @@ write_build_meta() {
   "target_os": "$TARGET_OS",
   "rust_target": "$RUST_TARGET",
   "artifact_name": "$ARTIFACT_NAME",
+  "launcher_kind": "$LAUNCHER_KIND",
+  "ffmpeg_source": "$FFMPEG_SOURCE_ID",
   "ffmpeg_asset": "$FFMPEG_ASSET",
   "git_commit": "$git_commit",
   "built_at": "$built_at"
 }
 EOF
+}
+
+write_linux_launcher() {
+  local destination="$1"
+  local target_binary="$2"
+
+  cat >"$destination" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+cd "\$SCRIPT_DIR"
+exec "\$SCRIPT_DIR/$target_binary" "\$@"
+EOF
+  chmod +x "$destination"
 }
 
 resolve_release_repository() {
@@ -198,6 +217,17 @@ main() {
   cp "$binary_src" "$bundle_dir/$ENTRY_EXECUTABLE"
   chmod +x "$bundle_dir/$ENTRY_EXECUTABLE"
   cp "$ROOT_DIR/RELEASE_README.md" "$bundle_dir/README.md"
+  case "$LAUNCHER_KIND" in
+    shell)
+      write_linux_launcher "$bundle_dir/$DISPLAY_NAME.sh" "$ENTRY_EXECUTABLE"
+      ;;
+    none)
+      ;;
+    *)
+      echo "unsupported launcher kind for $TARGET_ID: $LAUNCHER_KIND" >&2
+      exit 1
+      ;;
+  esac
 
   download_file "$FFMPEG_BASE_URL/$FFMPEG_ASSET" "$ffmpeg_archive"
   download_file "$FFMPEG_BASE_URL/$FFMPEG_CHECKSUMS_ASSET" "$ffmpeg_checksums"

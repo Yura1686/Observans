@@ -1,5 +1,7 @@
 # Building Observans Releases
 
+Observans publishes Linux and Windows releases only.
+
 Observans has two release packaging entrypoints:
 
 - `tools/build_release_linux.sh`
@@ -35,6 +37,7 @@ Outputs:
 - `dist/install.sh`
 - `dist/uninstall.sh`
 - `dist/install.sh` is stamped with the release repository slug
+- the archive contains `observans`, `Observans.sh`, `_observans_runtime`, `README.md`, and `build_meta.json`
 
 ## Windows
 
@@ -48,9 +51,11 @@ Outputs:
 
 - `dist/Observans-windows-x64.zip`
 - `dist/Observans-windows-x64.zip.sha256`
+- the archive contains `observans.exe`, `_observans_runtime`, `README.md`, and `build_meta.json`
 
 ## Notes
 
 - Bundled FFmpeg is resolved automatically at runtime when present next to the executable.
 - `OBSERVANS_FFMPEG` still overrides bundled/runtime lookup.
 - Official release builds are produced in GitHub Actions via `.github/workflows/release.yml`.
+- GitHub Releases publish only the runnable archives and `.sha256` files; `install.sh` and `uninstall.sh` stay repo tooling.

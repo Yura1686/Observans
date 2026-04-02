@@ -20,6 +20,8 @@ function Get-ManifestConfig {
     param([string]$Manifest, [string]$ReleaseTarget)
     $payload = Get-Content -Raw -Path $Manifest | ConvertFrom-Json
     $target = $payload.targets.$ReleaseTarget
+    $sourceId = $target.ffmpeg_source
+    $source = $payload.ffmpeg_sources.$sourceId
     [pscustomobject]@{
         DisplayName = $payload.display_name
         BinaryName = $payload.binary_name
@@ -29,10 +31,12 @@ function Get-ManifestConfig {
         ArchiveFormat = $target.archive_format
         BundleDir = $target.bundle_dir
         EntryExecutable = $target.entry_executable
+        LauncherKind = $target.launcher_kind
+        FfmpegSource = $sourceId
         FfmpegAsset = $target.ffmpeg_asset
         FfmpegSha256 = $target.ffmpeg_sha256
-        FfmpegBaseUrl = $payload.ffmpeg_source.base_url
-        FfmpegChecksumsAsset = $payload.ffmpeg_source.checksums_asset
+        FfmpegBaseUrl = $source.base_url
+        FfmpegChecksumsAsset = $source.checksums_asset
     }
 }
 
@@ -76,6 +80,8 @@ function Write-BuildMeta {
         target_os = $Config.TargetOs
         rust_target = $Config.RustTarget
         artifact_name = $Config.ArtifactName
+        launcher_kind = $Config.LauncherKind
+        ffmpeg_source = $Config.FfmpegSource
         ffmpeg_asset = $Config.FfmpegAsset
         git_commit = $gitCommit
         built_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -90,6 +96,9 @@ Require-Command Invoke-WebRequest
 $config = Get-ManifestConfig -Manifest $ManifestPath -ReleaseTarget $TargetId
 if ($config.TargetOs -ne "windows") {
     throw "target $TargetId is not a windows target"
+}
+if ($config.LauncherKind -ne "none") {
+    throw "unsupported launcher kind for $TargetId: $($config.LauncherKind)"
 }
 
 New-Item -ItemType Directory -Force -Path $DistDir, (Join-Path $WorkDir "downloads"), (Join-Path $WorkDir "extracted") | Out-Null
