@@ -13,158 +13,162 @@
     </header>
 
     <section class="layout">
-      <section class="panel stream-card">
-        <div class="stream-frame" id="stream-frame">
-          <canvas id="stream-stage" class="stage" aria-label="observans live stage"></canvas>
-          <img id="stream-source" class="stream-source" src="" alt="observans stream source">
+      <div class="main-column">
+        <section class="panel stream-card">
+          <div class="stream-frame" id="stream-frame">
+            <canvas id="stream-stage" class="stage" aria-label="observans live stage"></canvas>
+            <img id="stream-source" class="stream-source" src="" alt="observans stream source">
 
-          <div class="stream-placeholder" id="stream-placeholder" aria-hidden="true">
-            <div class="placeholder-ring"></div>
-            <div class="placeholder-label">Awaiting live stream</div>
-          </div>
-
-          <button id="fullscreen-btn" class="fullscreen-btn" type="button" aria-label="Enter fullscreen">
-            <span class="fullscreen-icon" aria-hidden="true"></span>
-          </button>
-        </div>
-
-        <div class="stream-footer">
-          <div class="stream-chips">
-            <div class="chip chip-live">LIVE STREAM</div>
-            <div class="chip">FPS <strong id="fps">-- / -- fps</strong></div>
-            <div class="chip">AGE <strong id="frame-age">-- ms</strong></div>
-          </div>
-
-          <div class="stream-meta">
-            <div class="status-line" id="status-line">system idle</div>
-            <div class="stream-meta-line" id="video-meta-line">awaiting first light</div>
-          </div>
-
-          <div class="stream-resolution" id="video-res">--</div>
-        </div>
-      </section>
-
-      <section class="panel summary-card">
-        <div class="summary-grid">
-          <div class="summary-item">
-            <div class="summary-label">Host</div>
-            <div class="summary-value" id="host">--</div>
-          </div>
-
-          <div class="summary-item">
-            <div class="summary-label">Clients</div>
-            <div class="summary-value" id="clients">0</div>
-          </div>
-        </div>
-
-        <div class="summary-bottom">
-          <section class="summary-block">
-            <div class="mini-title">Battery</div>
-            <div class="battery-meter">
-              <div class="battery-fill" id="battery-fill"></div>
+            <div class="stream-placeholder" id="stream-placeholder" aria-hidden="true">
+              <div class="placeholder-ring"></div>
+              <div class="placeholder-label">Awaiting live stream</div>
             </div>
-            <div class="battery-reading">
-              <strong id="batt">N/A</strong>
-              <span id="batt-sub">unavailable</span>
+
+            <button id="fullscreen-btn" class="fullscreen-btn" type="button" aria-label="Enter fullscreen">
+              <span class="fullscreen-icon" aria-hidden="true"></span>
+            </button>
+          </div>
+
+          <div class="stream-footer">
+            <div class="stream-chips">
+              <div class="chip chip-live">LIVE STREAM</div>
+              <div class="chip">FPS <strong id="fps">-- / -- fps</strong></div>
+              <div class="chip">AGE <strong id="frame-age">-- ms</strong></div>
             </div>
-          </section>
 
-          <section class="summary-block">
-            <div class="mini-title">Stream</div>
-            <div class="stack-badges">
-              <div class="badge" id="backend-pill">--</div>
-              <div class="badge" id="frame-size-pill">--</div>
-              <div class="badge" id="restart-pill">RST 0</div>
+            <div class="stream-meta">
+              <div class="status-line" id="status-line">system idle</div>
+              <div class="stream-meta-line" id="video-meta-line">awaiting first light</div>
             </div>
-          </section>
-        </div>
 
-        <div class="summary-controls">
-          <div class="recording-panel">
-            <span class="recording-dot" id="recording-dot" aria-hidden="true"></span>
-            <span class="recording-state" id="recording-state">ready to capture</span>
-            <strong class="recording-time" id="recording-time">00:00</strong>
+            <div class="stream-resolution" id="video-res">--</div>
           </div>
+        </section>
 
-          <div class="button-row">
-            <div class="button-slot">
-              <button id="record-btn" class="action-btn action-rec" type="button">Rec</button>
-              <button id="stop-btn" class="action-btn action-stop is-hidden" type="button" disabled>Stop</button>
+        <section class="panel telemetry-card">
+          <div class="telemetry-row">
+            <div class="telemetry-label">CPU</div>
+            <div class="telemetry-track">
+              <div class="telemetry-fill" id="cpu-bar-fill"></div>
             </div>
-            <button id="save-btn" class="action-btn action-save" type="button" disabled>Save</button>
+            <div class="telemetry-value" id="cpu">--%</div>
           </div>
-        </div>
-      </section>
+          <div class="telemetry-meta">processor load</div>
 
-      <section class="panel telemetry-card">
-        <div class="telemetry-row">
-          <div class="telemetry-label">CPU</div>
-          <div class="telemetry-track">
-            <div class="telemetry-fill" id="cpu-bar-fill"></div>
+          <div class="telemetry-row">
+            <div class="telemetry-label">RAM</div>
+            <div class="telemetry-track">
+              <div class="telemetry-fill" id="ram-bar-fill"></div>
+            </div>
+            <div class="telemetry-value" id="ram">--%</div>
           </div>
-          <div class="telemetry-value" id="cpu">--%</div>
-        </div>
-        <div class="telemetry-meta">processor load</div>
+          <div class="telemetry-meta" id="ram-sub">-- / -- MB</div>
 
-        <div class="telemetry-row">
-          <div class="telemetry-label">RAM</div>
-          <div class="telemetry-track">
-            <div class="telemetry-fill" id="ram-bar-fill"></div>
+          <div class="telemetry-row">
+            <div class="telemetry-label">TEMP</div>
+            <div class="telemetry-track">
+              <div class="telemetry-fill" id="temp-bar-fill"></div>
+            </div>
+            <div class="telemetry-value" id="temp">N/A</div>
           </div>
-          <div class="telemetry-value" id="ram">--%</div>
-        </div>
-        <div class="telemetry-meta" id="ram-sub">-- / -- MB</div>
+          <div class="telemetry-meta" id="temp-sub">sensor unavailable</div>
+        </section>
+      </div>
 
-        <div class="telemetry-row">
-          <div class="telemetry-label">TEMP</div>
-          <div class="telemetry-track">
-            <div class="telemetry-fill" id="temp-bar-fill"></div>
-          </div>
-          <div class="telemetry-value" id="temp">N/A</div>
-        </div>
-        <div class="telemetry-meta" id="temp-sub">sensor unavailable</div>
-      </section>
+      <aside class="side-column">
+        <section class="panel summary-card">
+          <div class="summary-grid">
+            <div class="summary-item">
+              <div class="summary-label">Host</div>
+              <div class="summary-value" id="host">--</div>
+            </div>
 
-      <section class="panel info-card">
-        <div class="info-grid">
-          <div class="info-item">
-            <div class="info-label">Clock</div>
-            <div class="info-value" id="clock">--:--:--</div>
+            <div class="summary-item">
+              <div class="summary-label">Clients</div>
+              <div class="summary-value" id="clients">0</div>
+            </div>
           </div>
 
-          <div class="info-item">
-            <div class="info-label">Date</div>
-            <div class="info-value" id="date">--.--.----</div>
+          <div class="summary-bottom">
+            <section class="summary-block">
+              <div class="mini-title">Battery</div>
+              <div class="battery-meter">
+                <div class="battery-fill" id="battery-fill"></div>
+              </div>
+              <div class="battery-reading">
+                <strong id="batt">N/A</strong>
+                <span id="batt-sub">unavailable</span>
+              </div>
+            </section>
+
+            <section class="summary-block">
+              <div class="mini-title">Stream</div>
+              <div class="stack-badges">
+                <div class="badge" id="backend-pill">--</div>
+                <div class="badge" id="frame-size-pill">--</div>
+                <div class="badge" id="restart-pill">RST 0</div>
+              </div>
+            </section>
           </div>
 
-          <div class="info-item">
-            <div class="info-label">Platform</div>
-            <div class="info-value" id="host-sub">--</div>
+          <div class="summary-controls">
+            <div class="recording-panel">
+              <span class="recording-dot" id="recording-dot" aria-hidden="true"></span>
+              <span class="recording-state" id="recording-state">ready to capture</span>
+              <strong class="recording-time" id="recording-time">00:00</strong>
+            </div>
+
+            <div class="button-row">
+              <div class="button-slot">
+                <button id="record-btn" class="action-btn action-rec" type="button">Start</button>
+                <button id="stop-btn" class="action-btn action-stop is-hidden" type="button" disabled>Stop</button>
+              </div>
+              <button id="save-btn" class="action-btn action-save" type="button" disabled>Save</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel info-card">
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="info-label">Clock</div>
+              <div class="info-value" id="clock">--:--:--</div>
+            </div>
+
+            <div class="info-item">
+              <div class="info-label">Date</div>
+              <div class="info-value" id="date">--.--.----</div>
+            </div>
+
+            <div class="info-item">
+              <div class="info-label">Platform</div>
+              <div class="info-value" id="host-sub">--</div>
+            </div>
+
+            <div class="info-item">
+              <div class="info-label">Uptime</div>
+              <div class="info-value" id="uptime">--</div>
+            </div>
+
+            <div class="info-item">
+              <div class="info-label">Resolution</div>
+              <div class="info-value" id="res">--</div>
+            </div>
+
+            <div class="info-item">
+              <div class="info-label">Input</div>
+              <div class="info-value" id="stream-input">--</div>
+            </div>
+
+            <div class="info-item info-item-wide">
+              <div class="info-label">Pipeline</div>
+              <div class="info-value" id="stream-pipeline">--</div>
+            </div>
           </div>
 
-          <div class="info-item">
-            <div class="info-label">Uptime</div>
-            <div class="info-value" id="uptime">--</div>
-          </div>
-
-          <div class="info-item">
-            <div class="info-label">Resolution</div>
-            <div class="info-value" id="res">--</div>
-          </div>
-
-          <div class="info-item">
-            <div class="info-label">Input</div>
-            <div class="info-value" id="stream-input">--</div>
-          </div>
-
-          <div class="info-item info-item-wide">
-            <div class="info-label">Pipeline</div>
-            <div class="info-value" id="stream-pipeline">--</div>
-          </div>
-        </div>
-
-        <div class="info-footnote" id="stream-meta">--</div>
-      </section>
+          <div class="info-footnote" id="stream-meta">--</div>
+        </section>
+      </aside>
     </section>
   </main>
   <script>{{SCRIPT}}</script>

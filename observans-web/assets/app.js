@@ -101,7 +101,19 @@ function setBarFill(id, percent) {
 function setBatteryFill(percent) {
   const fill = document.getElementById("battery-fill");
   if (!fill) return;
-  fill.style.width = `${clamp(percent, 0, 100)}%`;
+  const clamped = clamp(percent, 0, 100);
+  const hue = (clamped / 100) * 120;
+  const start = `hsl(${hue} 78% 52%)`;
+  const end = `hsl(${Math.min(hue + 12, 132)} 84% 68%)`;
+  fill.style.width = `${clamped}%`;
+  fill.style.background = `linear-gradient(90deg, ${start}, ${end})`;
+}
+
+function setBatteryUnavailable() {
+  const fill = document.getElementById("battery-fill");
+  if (!fill) return;
+  fill.style.width = "0%";
+  fill.style.background = "linear-gradient(90deg, rgba(255,255,255,0.16), rgba(255,255,255,0.08))";
 }
 
 function formatDuration(ms) {
@@ -337,7 +349,11 @@ async function tick() {
     setBarFill("cpu-bar-fill", cpuPct);
     setBarFill("ram-bar-fill", ramPct);
     setBarFill("temp-bar-fill", tempPct);
-    setBatteryFill(battAvailable ? battPct : 0);
+    if (battAvailable) {
+      setBatteryFill(battPct);
+    } else {
+      setBatteryUnavailable();
+    }
 
     if (!streamAlive && metrics.clients === 0) {
       setStatus("system idle");
