@@ -1,5 +1,5 @@
 use anyhow::Result;
-use observans_bus::create_bus;
+use observans_bus::{create_bus, ClientGate};
 use observans_core::{spawn_system_sampler, start_capture, Config, SharedMetrics};
 use observans_web::{serve, AppState};
 use tracing_subscriber::EnvFilter;
@@ -24,9 +24,18 @@ async fn main() -> Result<()> {
     let metrics = SharedMetrics::new(&config);
     let (frame_tx, _frame_rx) = create_bus(4);
 
-    let _sampler = spawn_system_sampler(metrics.clone());
-    let _capture = start_capture(config.clone(), frame_tx.clone(), metrics.clone());
+    // Shared gate: the web layer signals viewer connect/disconnect;
+    // the capture thread parks when the count is zero and wakes on the first viewer.
+    let gate = ClientGate::new();
 
-    let state = AppState::new(frame_tx, metrics, config);
+    let _sampler = spawn_system_sampler(metrics.clone());
+    let _capture = start_capture(
+        config.clone(),
+        frame_tx.clone(),
+        metrics.clone(),
+        gate.clone(),
+    );
+
+    let state = AppState::new(frame_tx, metrics, config, gate);
     serve(state.bind_addr(), state).await
-}
+}і

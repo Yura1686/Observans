@@ -6,10 +6,12 @@ use crate::probe::{
 };
 use crate::runtime::resolve_ffmpeg_for_current_process;
 use anyhow::{anyhow, bail, Result};
-use observans_bus::FrameSender;
+use observans_bus::{ClientGate, FrameSender};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{ChildStderr, Command, Stdio};
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tracing::{info, warn};
@@ -18,53 +20,88 @@ use tracing::{info, warn};
 // Public entry-point
 // ---------------------------------------------------------------------------
 
+/// Spawns the capture supervisor thread.
+///
+/// Lifecycle:
+/// 1. Park — wait for the first viewer via `gate`.
+/// 2. Run  — launch ffmpeg, forward frames to `tx`.
+/// 3. Stop — kill ffmpeg when the last viewer disconnects, go to step 1.
+///
+/// If ffmpeg crashes while viewers are still connected, it is restarted with
+/// an exponential back-off (1–5 s).
 pub fn start_capture(
     config: Config,
     tx: FrameSender,
     metrics: SharedMetrics,
+    gate: Arc<ClientGate>,
 ) -> thread::JoinHandle<()> {
-    thread::spawn(move || {
-        let mut first_attempt = true;
-        let mut retry_delay_secs = 1_u64;
+    thread::spawn(move || loop {
+        gate.wait_for_clients();
+        info!("viewer connected – starting capture pipeline");
+
+        let mut retry_delay_secs = 1u64;
+        let mut first = true;
+
         loop {
-            if !first_attempt {
-                metrics.note_restart();
-                thread::sleep(Duration::from_secs(retry_delay_secs));
+            // Bail out immediately if all viewers left (e.g. while we slept).
+            if gate.client_count() == 0 {
+                break;
             }
 
-            match run_capture_session(&config, &tx, &metrics) {
-                Ok(()) => retry_delay_secs = 1,
-                Err(error) => {
-                    warn!("capture session ended: {:#}", error.error);
-                    retry_delay_secs = if error.frames_sent > 0 {
+            if !first {
+                metrics.note_restart();
+                thread::sleep(Duration::from_secs(retry_delay_secs));
+                // Re-check after sleep — viewer may have left during the wait.
+                if gate.client_count() == 0 {
+                    break;
+                }
+            }
+            first = false;
+
+            match run_capture_session(&config, &tx, &metrics, &gate) {
+                CaptureEnd::Idle => break, // clean stop, go back to parking
+                CaptureEnd::Error(err) => {
+                    warn!("capture session ended: {:#}", err.error);
+                    retry_delay_secs = if err.frames_sent > 0 {
                         1
                     } else {
                         (retry_delay_secs + 1).min(5)
                     };
                 }
             }
-
-            first_attempt = false;
         }
+
+        info!("all viewers gone – capture pipeline stopped");
     })
 }
 
 // ---------------------------------------------------------------------------
-// Session
+// Session result
+// ---------------------------------------------------------------------------
+
+enum CaptureEnd {
+    /// Stopped cleanly because the last viewer disconnected.
+    Idle,
+    /// ffmpeg exited unexpectedly or failed to start.
+    Error(CaptureFailure),
+}
+
+// ---------------------------------------------------------------------------
+// Session — try capture attempts in priority order
 // ---------------------------------------------------------------------------
 
 fn run_capture_session(
     config: &Config,
     tx: &FrameSender,
     metrics: &SharedMetrics,
-) -> CaptureResult<()> {
-    let device = resolve_device(config).map_err(|e| capture_failure(0, e))?;
+    gate: &Arc<ClientGate>,
+) -> CaptureEnd {
+    let device = match resolve_device(config) {
+        Ok(d) => d,
+        Err(e) => return CaptureEnd::Error(capture_failure(0, e)),
+    };
     let ffmpeg = ffmpeg_binary();
-
-    // ---- Camera probe -------------------------------------------------------
     let params = probe_camera(config, &device, &ffmpeg);
-    // -------------------------------------------------------------------------
-
     metrics.set_stream_input(params.device.clone());
 
     let attempts = build_capture_attempts(config, &params);
@@ -83,22 +120,22 @@ fn run_capture_session(
             suffix,
         );
 
-        match run_capture_attempt(&ffmpeg, config, tx, metrics, &attempt) {
-            Ok(()) => return Ok(()),
-            Err(err) if err.frames_sent == 0 => {
+        match run_capture_attempt(&ffmpeg, config, tx, metrics, &attempt, gate) {
+            CaptureEnd::Idle => return CaptureEnd::Idle,
+            CaptureEnd::Error(err) if err.frames_sent == 0 => {
                 startup_failures.push(format!("{}: {}", attempt.label, err.error));
             }
-            Err(err) => return Err(err),
+            end => return end,
         }
     }
 
-    let details = startup_failures.join(" | ");
-    Err(capture_failure(
+    CaptureEnd::Error(capture_failure(
         0,
         anyhow!(
-            "all capture attempts failed for {} ({}): {details}",
+            "all capture attempts failed for {} ({}): {}",
             params.device,
-            config.capture_format()
+            config.capture_format(),
+            startup_failures.join(" | ")
         ),
     ))
 }
@@ -137,7 +174,6 @@ fn probe_camera(config: &Config, device: &str, ffmpeg: &PathBuf) -> ResolvedCapt
                 &config.input_format,
             )
         }
-        // Unknown backend — use config as-is.
         _ => ResolvedCaptureParams {
             device: device.to_string(),
             width: config.width,
@@ -182,12 +218,10 @@ fn build_v4l2_attempts(config: &Config, params: &ResolvedCaptureParams) -> Vec<C
             label: "primary".into(),
             args: ffmpeg_args(config, params, &ProfileHint::Exact),
         },
-        // If the probe selected something unusual, also try without input_format.
         CaptureAttempt {
             label: "no input_format".into(),
             args: ffmpeg_args(config, params, &ProfileHint::NoInputFormat),
         },
-        // Driver defaults — safest fallback.
         CaptureAttempt {
             label: "driver defaults".into(),
             args: ffmpeg_args(config, params, &ProfileHint::DriverDefaults),
@@ -201,22 +235,18 @@ fn build_v4l2_attempts(config: &Config, params: &ResolvedCaptureParams) -> Vec<C
 // (0xc0000005) inside the dshow COM layer on Windows. Omitted for dshow.
 fn build_dshow_attempts(config: &Config, params: &ResolvedCaptureParams) -> Vec<CaptureAttempt> {
     let mut attempts = vec![
-        // Probed / best mode first.
         CaptureAttempt {
             label: "primary".into(),
             args: ffmpeg_args(config, params, &ProfileHint::Exact),
         },
-        // Try without the pinned input_format.
         CaptureAttempt {
             label: "no input_format".into(),
             args: ffmpeg_args(config, params, &ProfileHint::NoInputFormat),
         },
-        // Try without video_size.
         CaptureAttempt {
             label: "driver size".into(),
             args: ffmpeg_args(config, params, &ProfileHint::NoSize),
         },
-        // Full driver defaults.
         CaptureAttempt {
             label: "driver defaults".into(),
             args: ffmpeg_args(config, params, &ProfileHint::DriverDefaults),
@@ -245,32 +275,43 @@ fn ffmpeg_args(config: &Config, params: &ResolvedCaptureParams, hint: &ProfileHi
 
     // Low-latency flags — safe on v4l2, crash-prone on dshow COM.
     if !is_dshow {
-        args.extend(["-fflags".into(), "nobuffer".into(), "-flags".into(), "low_delay".into()]);
+        args.extend([
+            "-fflags".into(),
+            "nobuffer".into(),
+            "-flags".into(),
+            "low_delay".into(),
+        ]);
     }
 
-    args.extend(["-thread_queue_size".into(), "4".into(), "-f".into(), config.capture_format().into()]);
+    args.extend([
+        "-thread_queue_size".into(),
+        "4".into(),
+        "-f".into(),
+        config.capture_format().into(),
+    ]);
 
     if is_dshow {
         args.extend(["-rtbufsize".into(), "128M".into()]);
     }
 
     // Framerate
-    let include_fps = !matches!(hint, ProfileHint::DriverDefaults);
-    if include_fps {
+    if !matches!(hint, ProfileHint::DriverDefaults) {
         args.extend(["-framerate".into(), params.fps.to_string()]);
     }
 
     // Video size
-    let include_size = !matches!(hint, ProfileHint::NoSize | ProfileHint::DriverDefaults);
-    if include_size {
-        args.extend(["-video_size".into(), format!("{}x{}", params.width, params.height)]);
+    if !matches!(hint, ProfileHint::NoSize | ProfileHint::DriverDefaults) {
+        args.extend([
+            "-video_size".into(),
+            format!("{}x{}", params.width, params.height),
+        ]);
     }
 
     // Input format (pixel/codec format from probe).
     //
-    // v4l2  → -input_format <fmt>          (kernel V4L2 ioctl-level selection)
-    // dshow → -pixel_format <fmt>  for raw  (bgr24, yuyv422, …)
-    //         -vcodec <fmt>        for compressed  (mjpeg, h264)
+    // v4l2  → -input_format <fmt>         (kernel V4L2 ioctl-level selection)
+    // dshow → -pixel_format <fmt>  for raw (bgr24, yuyv422, …)
+    //         -vcodec <fmt>        for compressed (mjpeg, h264)
     //
     // `-input_format` is a v4l2-specific option; passing it to dshow causes
     // "Unrecognized option 'input_format'" and FFmpeg refuses to start.
@@ -279,8 +320,6 @@ fn ffmpeg_args(config: &Config, params: &ResolvedCaptureParams, hint: &ProfileHi
     if include_fmt {
         if let Some(fmt) = &params.input_format {
             if is_dshow {
-                // Compressed codec (mjpeg / h264) → -vcodec
-                // Raw pixel format (yuyv422 / bgr24 / …) → -pixel_format
                 let is_compressed = matches!(fmt.as_str(), "mjpeg" | "h264");
                 if is_compressed {
                     args.extend(["-vcodec".into(), fmt.clone()]);
@@ -288,7 +327,6 @@ fn ffmpeg_args(config: &Config, params: &ResolvedCaptureParams, hint: &ProfileHi
                     args.extend(["-pixel_format".into(), fmt.clone()]);
                 }
             } else {
-                // v4l2
                 args.extend(["-input_format".into(), fmt.clone()]);
             }
         }
@@ -296,8 +334,6 @@ fn ffmpeg_args(config: &Config, params: &ResolvedCaptureParams, hint: &ProfileHi
 
     // Input device.
     // dshow requires the "video=<name>" prefix in the -i argument.
-    // The device stored in params may or may not have it already depending
-    // on whether the user passed it via --device or it was auto-resolved.
     let ffmpeg_input = if is_dshow {
         if params.device.starts_with("video=") {
             params.device.clone()
@@ -314,13 +350,23 @@ fn ffmpeg_args(config: &Config, params: &ResolvedCaptureParams, hint: &ProfileHi
 
     // For v4l2 MJPEG we can pass the stream straight through — no decode/re-encode.
     if is_v4l2_mjpeg {
-        args.extend(["-c:v".into(), "copy".into(), "-f".into(), "mjpeg".into(), "pipe:1".into()]);
+        args.extend([
+            "-c:v".into(),
+            "copy".into(),
+            "-f".into(),
+            "mjpeg".into(),
+            "pipe:1".into(),
+        ]);
     } else {
         args.extend([
-            "-threads".into(), "1".into(),
-            "-q:v".into(),    "7".into(),
-            "-f".into(),      "image2pipe".into(),
-            "-c:v".into(),    "mjpeg".into(),
+            "-threads".into(),
+            "1".into(),
+            "-q:v".into(),
+            "7".into(),
+            "-f".into(),
+            "image2pipe".into(),
+            "-c:v".into(),
+            "mjpeg".into(),
             "pipe:1".into(),
         ]);
     }
@@ -329,7 +375,7 @@ fn ffmpeg_args(config: &Config, params: &ResolvedCaptureParams, hint: &ProfileHi
 }
 
 // ---------------------------------------------------------------------------
-// Run one attempt
+// Run one attempt — on-demand: stops cleanly when no viewers remain
 // ---------------------------------------------------------------------------
 
 fn run_capture_attempt(
@@ -338,54 +384,97 @@ fn run_capture_attempt(
     tx: &FrameSender,
     metrics: &SharedMetrics,
     attempt: &CaptureAttempt,
-) -> CaptureResult<()> {
-    let mut child = Command::new(ffmpeg)
+    gate: &Arc<ClientGate>,
+) -> CaptureEnd {
+    let mut child = match Command::new(ffmpeg)
         .args(&attempt.args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| capture_failure(0, anyhow!(e).context("failed to spawn ffmpeg")))?;
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return CaptureEnd::Error(capture_failure(
+                0,
+                anyhow!(e).context("failed to spawn ffmpeg"),
+            ));
+        }
+    };
 
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| capture_failure(0, anyhow!("ffmpeg stdout missing")))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| capture_failure(0, anyhow!("ffmpeg stderr missing")))?;
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => {
+            return CaptureEnd::Error(capture_failure(0, anyhow!("ffmpeg stdout missing")));
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(s) => s,
+        None => {
+            return CaptureEnd::Error(capture_failure(0, anyhow!("ffmpeg stderr missing")));
+        }
+    };
 
     let stderr_reader = spawn_stderr_collector(stderr);
-    let mut parser = JpegStreamParser::default();
-    let mut buf = [0_u8; 8192];
-    let mut frames_sent = 0_u64;
+
+    // Offload the blocking stdout read to a dedicated thread so the main loop
+    // can poll the client gate with a timeout without stalling frame delivery.
+    let (frame_tx, frame_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let reader = thread::spawn(move || {
+        let mut stdout = stdout;
+        let mut parser = JpegStreamParser::default();
+        let mut buf = [0_u8; 8192];
+        loop {
+            match stdout.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    for frame in parser.push(&buf[..n]) {
+                        if frame_tx.send(frame).is_err() {
+                            return; // receiver dropped — main loop has exited
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    let mut frames_sent = 0u64;
+    let mut stopped_idle = false;
 
     loop {
-        let n = stdout.read(&mut buf).map_err(|e| {
-            capture_failure(frames_sent, anyhow!(e).context("reading ffmpeg output"))
-        })?;
-        if n == 0 {
-            break;
-        }
-        for frame in parser.push(&buf[..n]) {
-            let (w, h) = jpeg_dimensions(&frame).unwrap_or((config.width, config.height));
-            metrics.note_frame(frame.len(), w, h);
-            frames_sent += 1;
-            let _ = tx.send(frame);
+        match frame_rx.recv_timeout(Duration::from_millis(200)) {
+            Ok(frame) => {
+                let (w, h) = jpeg_dimensions(&frame).unwrap_or((config.width, config.height));
+                metrics.note_frame(frame.len(), w, h);
+                frames_sent += 1;
+                let _ = tx.send(frame);
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                if gate.client_count() == 0 {
+                    // No viewers left — kill ffmpeg and clean up.
+                    let _ = child.kill();
+                    stopped_idle = true;
+                    break;
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => break, // ffmpeg exited naturally
         }
     }
 
-    let status = child
-        .wait()
-        .map_err(|e| capture_failure(frames_sent, anyhow!(e).context("waiting for ffmpeg")))?;
+    // Reap the child process and the reader thread before returning.
+    let _ = child.wait();
+    reader.join().ok();
     let stderr_out = finish_stderr_collector(stderr_reader);
 
+    if stopped_idle {
+        return CaptureEnd::Idle;
+    }
+
     let err = if stderr_out.is_empty() {
-        anyhow!("ffmpeg exited with {status}")
+        anyhow!("ffmpeg exited unexpectedly")
     } else {
-        anyhow!("ffmpeg exited with {status}: {stderr_out}")
+        anyhow!("ffmpeg: {stderr_out}")
     };
-    Err(capture_failure(frames_sent, err))
+    CaptureEnd::Error(capture_failure(frames_sent, err))
 }
 
 // ---------------------------------------------------------------------------
@@ -413,8 +502,6 @@ fn ffmpeg_binary() -> PathBuf {
 // ---------------------------------------------------------------------------
 // Support types
 // ---------------------------------------------------------------------------
-
-type CaptureResult<T> = std::result::Result<T, CaptureFailure>;
 
 #[derive(Debug)]
 struct CaptureFailure {
@@ -648,9 +735,16 @@ mod tests {
 
     #[test]
     fn falls_back_to_platform_binary_name_when_bundle_is_missing() {
-        assert_eq!(resolve_ffmpeg_binary(None, None, "linux"), PathBuf::from("ffmpeg"));
         assert_eq!(
-            resolve_ffmpeg_binary(None, Some(PathBuf::from("C:/Observans/observans.exe")), "windows"),
+            resolve_ffmpeg_binary(None, None, "linux"),
+            PathBuf::from("ffmpeg")
+        );
+        assert_eq!(
+            resolve_ffmpeg_binary(
+                None,
+                Some(PathBuf::from("C:/Observans/observans.exe")),
+                "windows"
+            ),
             PathBuf::from("ffmpeg.exe")
         );
         assert_eq!(ffmpeg_executable_name("windows"), "ffmpeg.exe");

@@ -2,7 +2,7 @@ use axum::body::Body;
 use clap::Parser;
 use futures_util::StreamExt;
 use http_body_util::BodyExt;
-use observans_bus::{create_bus, FrameSender};
+use observans_bus::{create_bus, ClientGate, FrameSender};
 use observans_core::{Config, SharedMetrics};
 use observans_web::{app, AppState};
 use tower::ServiceExt;
@@ -11,7 +11,8 @@ fn test_state() -> (AppState, FrameSender) {
     let config = Config::try_parse_from(["observans"]).unwrap();
     let metrics = SharedMetrics::new(&config);
     let (tx, _rx) = create_bus(8);
-    (AppState::new(tx.clone(), metrics, config), tx)
+    let gate = ClientGate::new();
+    (AppState::new(tx.clone(), metrics, config, gate), tx)
 }
 
 #[tokio::test]

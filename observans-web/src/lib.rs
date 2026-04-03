@@ -6,10 +6,9 @@ use axum::extract::State;
 use axum::response::Html;
 use axum::routing::get;
 use axum::{Json, Router};
-use observans_bus::FrameSender;
+use observans_bus::{ClientGate, FrameSender};
 use observans_core::{Config, SharedMetrics};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
@@ -18,33 +17,37 @@ use tracing::info;
 pub struct AppState {
     pub tx: FrameSender,
     pub metrics: SharedMetrics,
-    pub client_count: Arc<AtomicUsize>,
+    pub gate: Arc<ClientGate>,
     pub config: Config,
 }
 
 impl AppState {
-    pub fn new(tx: FrameSender, metrics: SharedMetrics, config: Config) -> Self {
-        Self {
-            tx,
-            metrics,
-            client_count: Arc::new(AtomicUsize::new(0)),
-            config,
-        }
+    pub fn new(
+        tx: FrameSender,
+        metrics: SharedMetrics,
+        config: Config,
+        gate: Arc<ClientGate>,
+    ) -> Self {
+        Self { tx, metrics, gate, config }
     }
 
     pub fn bind_addr(&self) -> SocketAddr {
         self.config.bind_addr()
     }
 
+    /// Called when a viewer opens the MJPEG stream.
+    /// Increments the gate counter — this wakes the capture thread if it was parked.
     pub fn client_connected(&self) {
-        let count = self.client_count.fetch_add(1, Ordering::Relaxed) + 1;
+        let count = self.gate.add_client();
         self.metrics.set_clients(count);
     }
 
+    /// Called when a viewer closes the MJPEG stream.
+    /// Decrements the gate counter — when it reaches zero the capture thread
+    /// kills ffmpeg and parks until the next viewer arrives.
     pub fn client_disconnected(&self) {
-        let previous = self.client_count.fetch_sub(1, Ordering::Relaxed);
-        let next = previous.saturating_sub(1);
-        self.metrics.set_clients(next);
+        let count = self.gate.remove_client();
+        self.metrics.set_clients(count);
     }
 }
 
