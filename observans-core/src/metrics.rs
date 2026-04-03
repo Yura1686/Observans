@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::sensors::{SensorReading, SensorSampler};
 use chrono::Local;
 use serde::Serialize;
 use std::sync::{Arc, Mutex, RwLock};
@@ -166,6 +167,10 @@ impl SharedMetrics {
             .write()
             .expect("metrics write lock poisoned")
             .clients = clients;
+
+        if clients == 0 {
+            self.note_stream_idle();
+        }
     }
 
     pub fn note_queue_drop(&self, dropped: u64) {
@@ -186,7 +191,7 @@ impl SharedMetrics {
         snapshot.restarts += 1;
     }
 
-    pub fn refresh_system(&self, system: &System) {
+    pub fn refresh_system(&self, system: &System, sensors: &SensorReading) {
         let now = Local::now();
         let total_memory = system.total_memory();
         let used_memory = system.used_memory();
@@ -207,6 +212,32 @@ impl SharedMetrics {
         snapshot.ram_pct = ram_pct;
         snapshot.ram_used_mb = used_memory / 1024 / 1024;
         snapshot.ram_total_mb = total_memory / 1024 / 1024;
+        snapshot.temp = sensors.temp_c.unwrap_or(-1.0);
+        snapshot.batt = sensors.battery_pct.unwrap_or(-1);
+        snapshot.batt_status = sensors
+            .battery_status
+            .clone()
+            .unwrap_or_else(|| "unavailable".to_string());
+    }
+
+    pub fn note_stream_idle(&self) {
+        let mut frame_stats = self
+            .inner
+            .frame_stats
+            .lock()
+            .expect("frame stats lock poisoned");
+        frame_stats.window_started = Instant::now();
+        frame_stats.frames_in_window = 0;
+        frame_stats.last_frame_at = None;
+        frame_stats.avg_frame_kb = 0.0;
+
+        let mut snapshot = self
+            .inner
+            .snapshot
+            .write()
+            .expect("metrics write lock poisoned");
+        snapshot.fps_actual = 0.0;
+        snapshot.avg_frame_kb = 0.0;
     }
 
     fn frame_age_ms(&self) -> i64 {
@@ -225,6 +256,7 @@ impl SharedMetrics {
 pub fn spawn_system_sampler(metrics: SharedMetrics) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut system = System::new_all();
+        let mut sensors = SensorSampler::new();
         system.refresh_cpu_usage();
 
         let mut interval = tokio::time::interval(Duration::from_secs(1));
@@ -232,7 +264,8 @@ pub fn spawn_system_sampler(metrics: SharedMetrics) -> tokio::task::JoinHandle<(
             interval.tick().await;
             system.refresh_cpu_usage();
             system.refresh_memory();
-            metrics.refresh_system(&system);
+            let sensor_reading = sensors.sample();
+            metrics.refresh_system(&system, &sensor_reading);
         }
     })
 }
@@ -260,5 +293,20 @@ mod tests {
         assert_eq!(snapshot.temp, -1.0);
         assert_eq!(snapshot.batt, -1);
         assert_eq!(snapshot.batt_status, "unavailable");
+    }
+
+    #[test]
+    fn clears_live_frame_stats_when_no_clients_remain() {
+        let config = Config::try_parse_from(["observans"]).unwrap();
+        let metrics = SharedMetrics::new(&config);
+
+        metrics.note_frame(12 * 1024, 1280, 720);
+        metrics.set_clients(0);
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.clients, 0);
+        assert_eq!(snapshot.frame_age_ms, -1);
+        assert_eq!(snapshot.fps_actual, 0.0);
+        assert_eq!(snapshot.avg_frame_kb, 0.0);
     }
 }

@@ -10,8 +10,8 @@ chrono.workspace = true
 clap.workspace = true
 crossterm.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sysinfo.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 observans-bus = { path = "../observans-bus" }
-

@@ -19,7 +19,8 @@ mod tests {
         assert!(html.contains("id=\"record-btn\""));
         assert!(html.contains("id=\"stop-btn\""));
         assert!(html.contains("id=\"save-btn\""));
-        assert!(html.contains("id=\"cpu-graph\""));
         assert!(html.contains("id=\"stream-stage\""));
+        assert!(html.contains("id=\"fullscreen-btn\""));
+        assert!(html.contains("id=\"battery-fill\""));
     }
 }

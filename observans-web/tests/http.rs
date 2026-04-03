@@ -31,10 +31,11 @@ async fn root_page_keeps_old_ui_contract() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let html = String::from_utf8(body.to_vec()).unwrap();
 
-    assert!(html.contains("Capture Deck"));
+    assert!(html.contains("LIVE STREAM"));
     assert!(html.contains("id=\"record-btn\""));
-    assert!(html.contains("id=\"cpu-graph\""));
     assert!(html.contains("id=\"stream-stage\""));
+    assert!(html.contains("id=\"fullscreen-btn\""));
+    assert!(html.contains("id=\"battery-fill\""));
 }
 
 #[tokio::test]

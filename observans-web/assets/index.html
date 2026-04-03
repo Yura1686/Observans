@@ -8,109 +8,171 @@
 </head>
 <body>
   <main class="shell">
-    <header class="masthead">
-      <h1 class="brand-title">Observans</h1>
-    </header>
-
-    <section class="main-grid">
-      <section class="video-panel panel">
-        <div class="video-shell">
+    <section class="dashboard">
+      <section class="stream-card card">
+        <div class="stream-frame" id="stream-frame">
           <canvas id="stream-stage" class="stage" aria-label="observans live stage"></canvas>
           <img id="stream-source" class="stream-source" src="" alt="observans stream source">
-          <div class="video-vignette"></div>
-          <div class="video-overlay"></div>
+
+          <div class="stream-placeholder" id="stream-placeholder" aria-hidden="true">
+            <div class="placeholder-head"></div>
+            <div class="placeholder-body"></div>
+          </div>
+
+          <button id="fullscreen-btn" class="fullscreen-btn" type="button" aria-label="Enter fullscreen">
+            <span class="fullscreen-icon" aria-hidden="true"></span>
+          </button>
         </div>
 
-        <div class="video-bottom">
-          <div class="status-line" id="status-line">system idle</div>
-          <div class="video-meta">
-            <strong id="video-res">--</strong>
-            <span id="video-meta-line">awaiting first light</span>
+        <div class="stream-footer">
+          <div class="pill-row">
+            <div class="pill pill-accent">LIVE STREAM</div>
+            <div class="pill">FPS: <strong id="fps">-- / -- fps</strong></div>
+            <div class="pill">PING: <strong id="frame-age">-- ms</strong></div>
+          </div>
+
+          <div class="stream-summary">
+            <div class="status-line" id="status-line">SYSTEM IDLE</div>
+            <div class="pill resolution-pill"><strong id="video-res">--</strong></div>
           </div>
         </div>
+
+        <div class="stream-meta-line" id="video-meta-line">awaiting first light</div>
       </section>
 
-      <aside class="side-stack">
-        <section class="control-card panel">
-          <div class="card-title">Capture Deck</div>
+      <aside class="sidebar">
+        <section class="summary-card card">
+          <div class="summary-row">
+            <span class="summary-label">Host:</span>
+            <strong class="summary-value" id="host">--</strong>
+          </div>
 
-          <div class="control-body">
-            <div class="recording-halo">
-              <div class="recording-dot" id="recording-dot"></div>
-              <div>
-                <div class="recording-state" id="recording-state">ready to capture</div>
-                <div class="recording-time" id="recording-time">00:00</div>
+          <div class="summary-row">
+            <span class="summary-label">Clients:</span>
+            <strong class="summary-value" id="clients">0</strong>
+          </div>
+
+          <div class="summary-grid">
+            <section class="summary-pane battery-pane">
+              <h2 class="pane-title">BATT</h2>
+              <div class="battery-shell">
+                <div class="battery-cap"></div>
+                <div class="battery-body">
+                  <div class="battery-fill" id="battery-fill"></div>
+                  <div class="battery-value" id="batt">N/A</div>
+                </div>
               </div>
+              <div class="pane-sub" id="batt-sub">unavailable</div>
+            </section>
+
+            <section class="summary-pane stream-pane">
+              <h2 class="pane-title">STREAM</h2>
+              <div class="stack-pill" id="backend-pill">--</div>
+              <div class="stack-pill" id="frame-size-pill">--</div>
+              <div class="stack-pill" id="restart-pill">RST:0</div>
+            </section>
+          </div>
+        </section>
+
+        <section class="controls-card card">
+          <div class="recording-panel">
+            <span class="recording-dot" id="recording-dot" aria-hidden="true"></span>
+            <span class="recording-state" id="recording-state">ready to capture</span>
+            <strong class="recording-time" id="recording-time">00:00</strong>
+          </div>
+
+          <div class="button-row">
+            <div class="button-slot">
+              <button id="record-btn" class="action-btn primary" type="button">Rec</button>
+              <button id="stop-btn" class="action-btn primary is-hidden" type="button" disabled>Stop</button>
+            </div>
+            <button id="save-btn" class="action-btn" type="button" disabled>Save</button>
+          </div>
+        </section>
+
+        <section class="version-card card">
+          <div class="version-title">Version and other information</div>
+
+          <div class="info-grid">
+            <div class="info-pair">
+              <span class="info-label">Clock</span>
+              <strong class="info-value" id="clock">--:--:--</strong>
             </div>
 
-            <div class="button-row">
-              <button id="record-btn" class="action-btn rec" type="button">Rec</button>
-              <button id="stop-btn" class="action-btn stop" type="button" disabled>Stop</button>
-              <button id="save-btn" class="action-btn save" type="button" disabled>Save</button>
+            <div class="info-pair">
+              <span class="info-label">Date</span>
+              <strong class="info-value" id="date">--.--.----</strong>
+            </div>
+
+            <div class="info-pair">
+              <span class="info-label">Platform</span>
+              <strong class="info-value" id="host-sub">--</strong>
+            </div>
+
+            <div class="info-pair">
+              <span class="info-label">Uptime</span>
+              <strong class="info-value" id="uptime">--</strong>
+            </div>
+
+            <div class="info-pair">
+              <span class="info-label">Resolution</span>
+              <strong class="info-value" id="res">--</strong>
+            </div>
+
+            <div class="info-pair">
+              <span class="info-label">Input</span>
+              <strong class="info-value" id="stream-input">--</strong>
+            </div>
+
+            <div class="info-pair info-pair-wide">
+              <span class="info-label">Pipeline</span>
+              <strong class="info-value" id="stream-pipeline">--</strong>
+            </div>
+
+            <div class="info-pair info-pair-wide">
+              <span class="info-label">Status</span>
+              <strong class="info-value" id="stream-meta">--</strong>
             </div>
           </div>
         </section>
       </aside>
-    </section>
 
-    <section class="telemetry-grid">
-      <div class="metric panel">
-        <div class="metric-label">Time</div>
-        <div class="metric-value" id="clock">--:--:--</div>
-        <div class="metric-sub" id="date">--.--.----</div>
-      </div>
-
-      <div class="metric panel">
-        <div class="metric-label">CPU</div>
-        <div class="metric-value" id="cpu">--%</div>
-        <div class="metric-sub">processor load</div>
-        <div class="graph-wrap">
-          <svg id="cpu-graph" class="graph" viewBox="0 0 100 38" preserveAspectRatio="none"></svg>
+      <section class="telemetry-card card">
+        <div class="telemetry-group">
+          <div class="telemetry-row">
+            <div class="telemetry-label">CPU %</div>
+            <div class="telemetry-bar">
+              <div class="telemetry-fill" id="cpu-bar-fill"></div>
+            </div>
+            <div class="telemetry-value" id="cpu">--%</div>
+          </div>
+          <div class="telemetry-meta">processor load</div>
         </div>
-      </div>
 
-      <div class="metric panel">
-        <div class="metric-label">RAM</div>
-        <div class="metric-value" id="ram">--%</div>
-        <div class="metric-sub" id="ram-sub">-- / -- MB</div>
-        <div class="graph-wrap">
-          <svg id="ram-graph" class="graph" viewBox="0 0 100 38" preserveAspectRatio="none"></svg>
+        <div class="telemetry-group">
+          <div class="telemetry-row">
+            <div class="telemetry-label">RAM %</div>
+            <div class="telemetry-bar">
+              <div class="telemetry-fill" id="ram-bar-fill"></div>
+            </div>
+            <div class="telemetry-value" id="ram">--%</div>
+          </div>
+          <div class="telemetry-meta" id="ram-sub">-- / -- MB</div>
         </div>
-      </div>
 
-      <div class="metric panel">
-        <div class="metric-label">Thermal</div>
-        <div class="metric-value" id="temp">N/A</div>
-        <div class="metric-sub" id="temp-sub">sensor fallback</div>
-      </div>
-
-      <div class="metric panel">
-        <div class="metric-label">Battery</div>
-        <div class="metric-value" id="batt">N/A</div>
-        <div class="metric-sub" id="batt-sub">--</div>
-      </div>
-
-      <div class="metric panel">
-        <div class="metric-label">Host</div>
-        <div class="metric-value" id="host">--</div>
-        <div class="metric-sub" id="host-sub">platform --</div>
-      </div>
-
-      <div class="metric panel">
-        <div class="metric-label">Clients</div>
-        <div class="metric-value" id="clients">0</div>
-        <div class="metric-sub" id="uptime">uptime --:--:--</div>
-      </div>
-
-      <div class="metric panel">
-        <div class="metric-label">Stream</div>
-        <div class="metric-value" id="res">--</div>
-        <div class="metric-sub" id="fps">-- / -- fps</div>
-        <div class="metric-sub" id="stream-meta">--</div>
-      </div>
+        <div class="telemetry-group">
+          <div class="telemetry-row">
+            <div class="telemetry-label">TEMP</div>
+            <div class="telemetry-bar">
+              <div class="telemetry-fill" id="temp-bar-fill"></div>
+            </div>
+            <div class="telemetry-value" id="temp">N/A</div>
+          </div>
+          <div class="telemetry-meta" id="temp-sub">sensor unavailable</div>
+        </div>
+      </section>
     </section>
   </main>
   <script>{{SCRIPT}}</script>
 </body>
 </html>
-

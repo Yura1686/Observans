@@ -1,14 +1,20 @@
 const params = new URLSearchParams(location.search);
 const streamSource = document.getElementById("stream-source");
+const streamFrame = document.getElementById("stream-frame");
+const placeholder = document.getElementById("stream-placeholder");
 const stage = document.getElementById("stream-stage");
 const stageCtx = stage.getContext("2d", { alpha: false, desynchronized: true });
 const statusLine = document.getElementById("status-line");
+const fullscreenBtn = document.getElementById("fullscreen-btn");
 const recordingDot = document.getElementById("recording-dot");
 const recordingState = document.getElementById("recording-state");
 const recordingTime = document.getElementById("recording-time");
 const recordBtn = document.getElementById("record-btn");
 const stopBtn = document.getElementById("stop-btn");
 const saveBtn = document.getElementById("save-btn");
+const backendPill = document.getElementById("backend-pill");
+const frameSizePill = document.getElementById("frame-size-pill");
+const restartPill = document.getElementById("restart-pill");
 
 let streamAlive = false;
 let lastMetricsOk = 0;
@@ -23,15 +29,15 @@ let recordedMimeType = "video/webm";
 let recordStartedAt = 0;
 let recordTicker = null;
 
-const cpuHistory = [];
-const ramHistory = [];
-const MAX_POINTS = 40;
-
 function withTs(path) {
   const query = new URLSearchParams(params);
   query.set("t", Date.now().toString());
   const encoded = query.toString();
   return encoded ? `${path}?${encoded}` : path;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function setStatus(label, ok = null) {
@@ -41,14 +47,20 @@ function setStatus(label, ok = null) {
   if (ok === false) statusLine.classList.add("bad");
 }
 
+function setLiveState(live) {
+  streamAlive = live;
+  streamFrame.classList.toggle("is-live", live);
+  placeholder.setAttribute("aria-hidden", live ? "true" : "false");
+}
+
 function connectStream() {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
 
-  streamAlive = false;
-  setStatus("connecting to twilight feed", false);
+  setLiveState(false);
+  setStatus("CONNECTING", false);
   streamSource.src = withTs("/stream");
   updateRecordingUi();
 }
@@ -80,29 +92,15 @@ function stopRenderLoop() {
   renderLoopId = 0;
 }
 
-function pushHistory(arr, value) {
-  arr.push(Math.max(0, Math.min(100, value)));
-  while (arr.length > MAX_POINTS) arr.shift();
+function setBarFill(id, percent) {
+  const fill = document.getElementById(id);
+  if (!fill) return;
+  fill.style.width = `${clamp(percent, 0, 100)}%`;
 }
 
-function drawGraph(svgId, values) {
-  const svg = document.getElementById(svgId);
-  if (!svg || values.length === 0) return;
-
-  const width = 100;
-  const height = 38;
-  const step = width / Math.max(values.length - 1, 1);
-  const points = values.map((value, index) => {
-    const x = index * step;
-    const y = height - (value / 100) * height;
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
-  });
-
-  const line = points.join(" ");
-  const area = `0,${height} ${line} ${width},${height}`;
-  svg.innerHTML =
-    `<polygon points="${area}" fill="rgba(158,208,255,0.14)"></polygon>` +
-    `<polyline points="${line}" fill="none" stroke="rgba(255, 220, 184, 0.96)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"></polyline>`;
+function setBatteryFill(percent) {
+  const fill = document.getElementById("battery-fill");
+  fill.style.height = `${clamp(percent, 0, 100)}%`;
 }
 
 function formatDuration(ms) {
@@ -117,6 +115,7 @@ function updateRecordingClock() {
     recordingTime.textContent = "00:00";
     return;
   }
+
   recordingTime.textContent = formatDuration(Date.now() - recordStartedAt);
 }
 
@@ -152,6 +151,8 @@ function updateRecordingUi() {
   stopBtn.disabled = !isRecording;
   saveBtn.disabled = isRecording || !recordedBlob;
 
+  recordBtn.classList.toggle("is-hidden", isRecording);
+  stopBtn.classList.toggle("is-hidden", !isRecording);
   recordingDot.classList.toggle("live", isRecording);
   recordingState.textContent = isRecording
     ? "recording local clip"
@@ -161,13 +162,13 @@ function updateRecordingUi() {
 function startRecording() {
   if (!window.MediaRecorder || !stage.captureStream || !stageCtx) {
     recordingState.textContent = "recording unsupported";
-    setStatus("recording unsupported in this browser", false);
+    setStatus("RECORDING UNSUPPORTED", false);
     return;
   }
 
   if (!streamAlive || stage.width === 0 || stage.height === 0) {
     recordingState.textContent = "waiting for live stream";
-    setStatus("wait for the live stream before recording", false);
+    setStatus("WAIT FOR LIVE STREAM", false);
     return;
   }
 
@@ -184,7 +185,7 @@ function startRecording() {
     mediaRecorder = new MediaRecorder(recordStream, options);
   } catch (error) {
     recordingState.textContent = "recorder init failed";
-    setStatus("could not start local recording", false);
+    setStatus("COULD NOT START RECORDING", false);
     return;
   }
 
@@ -203,7 +204,7 @@ function startRecording() {
       recordTicker = null;
     }
     recordingTime.textContent = "00:00";
-    setStatus("local clip ready to save", true);
+    setStatus("CLIP READY", true);
     updateRecordingUi();
     const tracks = mediaRecorder.stream ? mediaRecorder.stream.getTracks() : [];
     tracks.forEach((track) => track.stop());
@@ -213,7 +214,7 @@ function startRecording() {
   recordStartedAt = Date.now();
   updateRecordingClock();
   recordTicker = setInterval(updateRecordingClock, 250);
-  setStatus("recording local clip", true);
+  setStatus("RECORDING", true);
   updateRecordingUi();
 }
 
@@ -238,20 +239,55 @@ function saveRecording() {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  setStatus("clip saved to local device", true);
+  setStatus("CLIP SAVED", true);
+}
+
+function titleCase(value) {
+  return String(value || "--")
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatTemperature(temp) {
+  if (temp < 0) return "N/A";
+  return `${temp.toFixed(1)}°C`;
+}
+
+function thermalState(temp) {
+  if (temp < 0) return "sensor unavailable";
+  if (temp >= 80) return "thermal load high";
+  if (temp >= 65) return "thermal load elevated";
+  return "thermal envelope stable";
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    streamFrame.requestFullscreen?.().catch(() => {});
+  } else if (document.fullscreenElement === streamFrame) {
+    document.exitFullscreen?.().catch(() => {});
+  }
+}
+
+function syncFullscreenUi() {
+  const active = document.fullscreenElement === streamFrame;
+  document.body.classList.toggle("viewer-fullscreen", active);
+  fullscreenBtn.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
 }
 
 streamSource.onload = () => {
-  streamAlive = true;
-  setStatus("observans live and stable", true);
+  setLiveState(true);
+  setStatus("LIVE", true);
   startRenderLoop();
   updateRecordingUi();
 };
 
 streamSource.onerror = () => {
-  streamAlive = false;
+  setLiveState(false);
   stopRenderLoop();
-  setStatus("reconnecting to twilight feed", false);
+  setStatus("RECONNECTING", false);
   updateRecordingUi();
   reconnectTimer = setTimeout(connectStream, 1500);
 };
@@ -259,6 +295,8 @@ streamSource.onerror = () => {
 recordBtn.addEventListener("click", startRecording);
 stopBtn.addEventListener("click", stopRecording);
 saveBtn.addEventListener("click", saveRecording);
+fullscreenBtn.addEventListener("click", toggleFullscreen);
+document.addEventListener("fullscreenchange", syncFullscreenUi);
 
 async function tick() {
   try {
@@ -269,48 +307,59 @@ async function tick() {
     lastMetrics = metrics;
     lastMetricsOk = Date.now();
 
-    const tempText = metrics.temp > 0 ? `${metrics.temp.toFixed(1)}°C` : "N/A";
-    const tempSub = metrics.temp > 0 ? "sensor active" : "unavailable on this platform";
-    const battText = metrics.batt >= 0 ? `${metrics.batt}%` : "N/A";
+    const cpuPct = clamp(metrics.cpu || 0, 0, 100);
+    const ramPct = clamp(metrics.ram_pct || 0, 0, 100);
+    const tempAvailable = metrics.temp >= 0;
+    const battAvailable = metrics.batt >= 0;
+    const tempPct = tempAvailable ? clamp(metrics.temp, 0, 100) : 0;
     const frameAgeText = metrics.frame_age_ms >= 0 ? `${metrics.frame_age_ms} ms` : "--";
     const frameSizeText = metrics.avg_frame_kb > 0 ? `${metrics.avg_frame_kb.toFixed(1)} KB` : "--";
+    const liveFpsText = `${metrics.fps_actual.toFixed(1)} / ${metrics.fps_target} fps`;
+    const batteryText = battAvailable ? `${metrics.batt}%` : "N/A";
+    const batteryStatus = battAvailable ? titleCase(metrics.batt_status || "unknown") : "unavailable";
 
     document.getElementById("clock").textContent = metrics.time;
     document.getElementById("date").textContent = metrics.date;
-    document.getElementById("cpu").textContent = `${metrics.cpu.toFixed(1)}%`;
-    document.getElementById("ram").textContent = `${metrics.ram_pct.toFixed(1)}%`;
+    document.getElementById("cpu").textContent = `${cpuPct.toFixed(1)}%`;
+    document.getElementById("ram").textContent = `${ramPct.toFixed(1)}%`;
     document.getElementById("ram-sub").textContent = `${metrics.ram_used_mb} / ${metrics.ram_total_mb} MB`;
-    document.getElementById("temp").textContent = tempText;
-    document.getElementById("temp-sub").textContent = tempSub;
-    document.getElementById("batt").textContent = battText;
-    document.getElementById("batt-sub").textContent = String(metrics.batt_status || "--").toLowerCase();
+    document.getElementById("temp").textContent = formatTemperature(metrics.temp);
+    document.getElementById("temp-sub").textContent = thermalState(metrics.temp);
+    document.getElementById("batt").textContent = batteryText;
+    document.getElementById("batt-sub").textContent = batteryStatus;
     document.getElementById("host").textContent = metrics.hostname;
     document.getElementById("host-sub").textContent = `${metrics.platform_name} / ${metrics.capture_backend}`;
     document.getElementById("clients").textContent = metrics.clients;
-    document.getElementById("uptime").textContent = `uptime ${metrics.uptime}`;
+    document.getElementById("uptime").textContent = metrics.uptime;
     document.getElementById("res").textContent = metrics.res;
-    document.getElementById("fps").textContent = `${metrics.fps_actual.toFixed(1)} / ${metrics.fps_target} fps`;
-    document.getElementById("stream-meta").textContent =
-      `${metrics.stream_pipeline} | ${metrics.stream_input} | age ${frameAgeText} | drops ${metrics.queue_drops}`;
+    document.getElementById("fps").textContent = liveFpsText;
+    document.getElementById("frame-age").textContent = frameAgeText;
+    document.getElementById("stream-input").textContent = metrics.stream_input;
+    document.getElementById("stream-pipeline").textContent = metrics.stream_pipeline;
+    document.getElementById("stream-meta").textContent = `Age ${frameAgeText} • Drops ${metrics.queue_drops} • Clients ${metrics.clients}`;
     document.getElementById("video-res").textContent = metrics.res;
     document.getElementById("video-meta-line").textContent =
-      `${metrics.capture_backend} | ${frameSizeText} | restart ${metrics.restarts}`;
+      `${metrics.capture_backend} • ${metrics.stream_input} • ${frameSizeText} • RST ${metrics.restarts}`;
 
-    pushHistory(cpuHistory, metrics.cpu);
-    pushHistory(ramHistory, metrics.ram_pct);
-    drawGraph("cpu-graph", cpuHistory);
-    drawGraph("ram-graph", ramHistory);
+    backendPill.textContent = String(metrics.capture_backend || "--").toUpperCase();
+    frameSizePill.textContent = frameSizeText;
+    restartPill.textContent = `RST:${metrics.restarts}`;
+
+    setBarFill("cpu-bar-fill", cpuPct);
+    setBarFill("ram-bar-fill", ramPct);
+    setBarFill("temp-bar-fill", tempPct);
+    setBatteryFill(battAvailable ? metrics.batt : 0);
 
     if (!streamAlive && metrics.clients === 0) {
-      setStatus("system idle under the evening sky");
+      setStatus("STANDBY", null);
     } else if (streamAlive && !(mediaRecorder && mediaRecorder.state !== "inactive")) {
-      setStatus(`live stream · ${metrics.fps_actual.toFixed(1)} fps · age ${frameAgeText}`, true);
+      setStatus(`LIVE ${metrics.fps_actual.toFixed(1)} FPS`, true);
     }
 
     updateRecordingUi();
   } catch (error) {
     if (Date.now() - lastMetricsOk > 4000) {
-      setStatus("telemetry unavailable", false);
+      setStatus("TELEMETRY OFFLINE", false);
     }
   }
 }
@@ -334,7 +383,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     if (!mediaRecorder || mediaRecorder.state === "inactive") {
       streamSource.src = "";
-      streamAlive = false;
+      setLiveState(false);
       stopRenderLoop();
       updateRecordingUi();
     }
@@ -346,4 +395,3 @@ document.addEventListener("visibilitychange", () => {
 connectStream();
 setInterval(tick, 1000);
 tick();
-

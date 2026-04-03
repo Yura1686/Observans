@@ -7,6 +7,7 @@ pub mod metrics;
 pub mod platform;
 pub mod probe;
 pub mod runtime;
+mod sensors;
 pub mod shutdown;
 pub mod tui;
 

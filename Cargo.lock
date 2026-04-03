@@ -662,6 +662,7 @@ dependencies = [
  "crossterm",
  "observans-bus",
  "serde",
+ "serde_json",
  "sysinfo",
  "tokio",
  "tracing",
