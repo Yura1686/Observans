@@ -3,7 +3,7 @@ use anyhow::Result;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CameraInfo {
@@ -57,7 +57,7 @@ fn enumerate_ffmpeg_cameras(
     let ffmpeg_bin = ffmpeg_path
         .map(Path::to_path_buf)
         .unwrap_or_else(|| Path::new("ffmpeg").to_path_buf());
-    let args = match platform_name {
+    let primary_args = match platform_name {
         "windows" => vec![
             "-hide_banner",
             "-list_devices",
@@ -69,11 +69,37 @@ fn enumerate_ffmpeg_cameras(
         ],
         _ => unreachable!(),
     };
+    let mut cameras = parse_ffmpeg_device_list(
+        platform_name,
+        &run_ffmpeg_inventory(&ffmpeg_bin, &primary_args)?,
+    );
 
+    if cameras.is_empty() && platform_name == "windows" {
+        let fallback_args = ["-hide_banner", "-sources", "dshow"];
+        cameras = parse_ffmpeg_device_list(
+            platform_name,
+            &run_ffmpeg_inventory(&ffmpeg_bin, &fallback_args)?,
+        );
+    }
+
+    Ok(cameras)
+}
+
+fn run_ffmpeg_inventory(ffmpeg_bin: &Path, args: &[&str]) -> Result<String> {
     let output = Command::new(ffmpeg_bin).args(args).output()?;
-    let text = String::from_utf8_lossy(&output.stderr);
+    Ok(ffmpeg_output_text(&output))
+}
 
-    Ok(parse_ffmpeg_device_list(platform_name, &text))
+fn ffmpeg_output_text(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    match (stderr.is_empty(), stdout.is_empty()) {
+        (true, false) => stdout.into_owned(),
+        (false, true) => stderr.into_owned(),
+        (false, false) => format!("{stderr}\n{stdout}"),
+        (true, true) => String::new(),
+    }
 }
 
 pub fn parse_v4l2_devices(text: &str) -> Vec<CameraInfo> {
@@ -127,14 +153,18 @@ pub fn parse_v4l2_devices(text: &str) -> Vec<CameraInfo> {
 
 pub fn parse_ffmpeg_device_list(platform_name: &str, text: &str) -> Vec<CameraInfo> {
     match platform_name {
-        "windows" => parse_dshow_devices(text),
+        "windows" => {
+            let mut cameras = parse_dshow_devices(text);
+            cameras.extend(parse_dshow_sources(text));
+            dedup_cameras(cameras)
+        }
         _ => Vec::new(),
     }
 }
 
 fn parse_dshow_devices(text: &str) -> Vec<CameraInfo> {
     let mut in_video_section = false;
-    let mut cameras = Vec::new();
+    let mut cameras: Vec<CameraInfo> = Vec::new();
 
     for line in text.lines() {
         let lower = line.to_ascii_lowercase();
@@ -146,7 +176,17 @@ fn parse_dshow_devices(text: &str) -> Vec<CameraInfo> {
             in_video_section = false;
             continue;
         }
-        if !in_video_section || lower.contains("alternative name") {
+        if !in_video_section {
+            continue;
+        }
+
+        if lower.contains("alternative name") {
+            if let Some(name) = extract_quoted(line) {
+                if let Some(camera) = cameras.last_mut() {
+                    // FFmpeg accepts the stable alternative device name in `video=<name>`.
+                    camera.device = format!("video={name}");
+                }
+            }
             continue;
         }
 
@@ -163,11 +203,54 @@ fn parse_dshow_devices(text: &str) -> Vec<CameraInfo> {
     cameras
 }
 
+fn parse_dshow_sources(text: &str) -> Vec<CameraInfo> {
+    let mut cameras = Vec::new();
+
+    for line in text.lines() {
+        let Some(source) = extract_bracketed_line(line) else {
+            continue;
+        };
+        if !source.to_ascii_lowercase().contains("(video)") {
+            continue;
+        }
+
+        let name = strip_dshow_source_kind(source);
+        if name.is_empty() {
+            continue;
+        }
+
+        cameras.push(CameraInfo {
+            device: format!("video={name}"),
+            name: name.to_string(),
+            backend: "dshow".to_string(),
+            details: "windows camera".to_string(),
+        });
+    }
+
+    cameras
+}
+
 fn extract_quoted(line: &str) -> Option<&str> {
     let start = line.find('"')?;
     let rest = &line[start + 1..];
     let end = rest.find('"')?;
     Some(&rest[..end])
+}
+
+fn extract_bracketed_line(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    if !(trimmed.starts_with('[') && trimmed.ends_with(']')) {
+        return None;
+    }
+    Some(&trimmed[1..trimmed.len() - 1])
+}
+
+fn strip_dshow_source_kind(source: &str) -> &str {
+    source
+        .rsplit_once(" (")
+        .filter(|(_, suffix)| suffix.eq_ignore_ascii_case("video)"))
+        .map(|(name, _)| name.trim())
+        .unwrap_or_else(|| source.trim())
 }
 
 fn scan_linux_video_devices() -> Vec<CameraInfo> {
@@ -252,7 +335,20 @@ HD Pro Webcam C920 (usb-0000:00:14.0-8):\n\
 
         let cameras = parse_ffmpeg_device_list("windows", text);
         assert_eq!(cameras.len(), 1);
+        assert_eq!(cameras[0].device, "video=@device_pnp_...");
+        assert_eq!(cameras[0].name, "Integrated Camera");
+    }
+
+    #[test]
+    fn parses_windows_ffmpeg_sources_inventory() {
+        let text = "\
+[Integrated Camera (video)]\n\
+[Microphone Array (audio)]\n";
+
+        let cameras = parse_ffmpeg_device_list("windows", text);
+        assert_eq!(cameras.len(), 1);
         assert_eq!(cameras[0].device, "video=Integrated Camera");
+        assert_eq!(cameras[0].name, "Integrated Camera");
     }
 
     #[test]

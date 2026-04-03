@@ -5,7 +5,7 @@ use crate::probe::{
     probe_dshow, probe_v4l2, resolve_params_from_probe, ResolvedCaptureParams,
 };
 use crate::runtime::resolve_ffmpeg_for_current_process;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use observans_bus::{ClientGate, FrameSender};
 use std::io::Read;
 use std::path::PathBuf;
@@ -513,10 +513,13 @@ fn resolve_device(config: &Config) -> Result<String> {
     if let Some(dev) = first_camera_device(Some(ffmpeg_path.as_path())) {
         return Ok(dev);
     }
-    if config.capture_format() == "v4l2" {
-        return Ok(config.platform_default_device().to_string());
-    }
-    bail!("could not auto-resolve a Windows camera; re-run with --device \"Integrated Camera\"")
+
+    let fallback = config.platform_default_device().to_string();
+    warn!(
+        "camera auto-resolve returned no devices; falling back to {}",
+        fallback
+    );
+    Ok(fallback)
 }
 
 fn ffmpeg_binary() -> PathBuf {
