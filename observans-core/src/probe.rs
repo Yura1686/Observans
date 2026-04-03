@@ -119,7 +119,12 @@ impl ProbeResult {
     ///   • If none fit inside constraints, pick the highest-scoring overall
     ///     (camera can't meet the requested settings; let FFmpeg or the driver
     ///     downscale / drop frames).
-    pub fn best_mode(&self, preferred_width: u32, preferred_height: u32, preferred_fps: u32) -> Option<&CameraMode> {
+    pub fn best_mode(
+        &self,
+        preferred_width: u32,
+        preferred_height: u32,
+        preferred_fps: u32,
+    ) -> Option<&CameraMode> {
         if self.modes.is_empty() {
             return None;
         }
@@ -401,7 +406,10 @@ pub fn parse_dshow_options(text: &str) -> Vec<CameraMode> {
         }
 
         // Extract "max s=WxH fps=N"
-        if let (Some(size), Some(fps)) = (extract_dshow_max_size(content), extract_dshow_max_fps(content)) {
+        if let (Some(size), Some(fps)) = (
+            extract_dshow_max_size(content),
+            extract_dshow_max_fps(content),
+        ) {
             upsert_mode(&mut modes, format, size.0, size.1, fps);
         }
     }
@@ -525,10 +533,16 @@ ioctl: VIDIOC_ENUM_FMT\n\
         // Should have: YUYV 640x480@30, YUYV 1280x720@10, MJPG 640x480@30, MJPG 1280x720@30
         assert_eq!(modes.len(), 4);
 
-        let yuyv_hd = modes.iter().find(|m| m.format == "yuyv422" && m.width == 1280).unwrap();
+        let yuyv_hd = modes
+            .iter()
+            .find(|m| m.format == "yuyv422" && m.width == 1280)
+            .unwrap();
         assert_eq!(yuyv_hd.fps_max, 10);
 
-        let mjpeg_hd = modes.iter().find(|m| m.format == "mjpeg" && m.width == 1280).unwrap();
+        let mjpeg_hd = modes
+            .iter()
+            .find(|m| m.format == "mjpeg" && m.width == 1280)
+            .unwrap();
         assert_eq!(mjpeg_hd.fps_max, 30);
     }
 
@@ -556,7 +570,9 @@ ioctl: VIDIOC_ENUM_FMT\n\
         let modes = parse_ffmpeg_v4l2_formats(text);
         assert_eq!(modes.len(), 4);
         assert!(modes.iter().any(|m| m.format == "mjpeg" && m.width == 1280));
-        assert!(modes.iter().any(|m| m.format == "yuyv422" && m.width == 640));
+        assert!(modes
+            .iter()
+            .any(|m| m.format == "yuyv422" && m.width == 640));
     }
 
     // --- dshow parsing ---
@@ -571,8 +587,12 @@ ioctl: VIDIOC_ENUM_FMT\n\
 ";
         let modes = parse_dshow_options(text);
         assert_eq!(modes.len(), 2);
-        assert!(modes.iter().any(|m| m.format == "bgr24" && m.width == 640 && m.fps_max == 30));
-        assert!(modes.iter().any(|m| m.format == "yuyv422" && m.width == 640));
+        assert!(modes
+            .iter()
+            .any(|m| m.format == "bgr24" && m.width == 640 && m.fps_max == 30));
+        assert!(modes
+            .iter()
+            .any(|m| m.format == "yuyv422" && m.width == 640));
     }
 
     #[test]
@@ -593,8 +613,18 @@ ioctl: VIDIOC_ENUM_FMT\n\
     fn best_mode_prefers_mjpeg_over_yuyv() {
         let probe = ProbeResult {
             modes: vec![
-                CameraMode { format: "yuyv422".into(), width: 1280, height: 720, fps_max: 10 },
-                CameraMode { format: "mjpeg".into(),   width: 1280, height: 720, fps_max: 30 },
+                CameraMode {
+                    format: "yuyv422".into(),
+                    width: 1280,
+                    height: 720,
+                    fps_max: 10,
+                },
+                CameraMode {
+                    format: "mjpeg".into(),
+                    width: 1280,
+                    height: 720,
+                    fps_max: 30,
+                },
             ],
         };
         let best = probe.best_mode(1280, 720, 30).unwrap();
@@ -607,8 +637,18 @@ ioctl: VIDIOC_ENUM_FMT\n\
         // Windows-like: only 640x480 available, user wants 1280x720.
         let probe = ProbeResult {
             modes: vec![
-                CameraMode { format: "bgr24".into(),   width: 640, height: 480, fps_max: 30 },
-                CameraMode { format: "yuyv422".into(), width: 640, height: 480, fps_max: 30 },
+                CameraMode {
+                    format: "bgr24".into(),
+                    width: 640,
+                    height: 480,
+                    fps_max: 30,
+                },
+                CameraMode {
+                    format: "yuyv422".into(),
+                    width: 640,
+                    height: 480,
+                    fps_max: 30,
+                },
             ],
         };
         let best = probe.best_mode(1280, 720, 30).unwrap();
@@ -619,9 +659,12 @@ ioctl: VIDIOC_ENUM_FMT\n\
     #[test]
     fn best_mode_caps_fps_to_preferred() {
         let probe = ProbeResult {
-            modes: vec![
-                CameraMode { format: "mjpeg".into(), width: 640, height: 480, fps_max: 60 },
-            ],
+            modes: vec![CameraMode {
+                format: "mjpeg".into(),
+                width: 640,
+                height: 480,
+                fps_max: 60,
+            }],
         };
         // Prefer 30fps.
         let params = resolve_params_from_probe(&probe, "/dev/video0", 640, 480, 30, "auto");
@@ -631,9 +674,12 @@ ioctl: VIDIOC_ENUM_FMT\n\
     #[test]
     fn resolve_params_honours_user_pinned_format() {
         let probe = ProbeResult {
-            modes: vec![
-                CameraMode { format: "mjpeg".into(), width: 1280, height: 720, fps_max: 30 },
-            ],
+            modes: vec![CameraMode {
+                format: "mjpeg".into(),
+                width: 1280,
+                height: 720,
+                fps_max: 30,
+            }],
         };
         let params = resolve_params_from_probe(&probe, "/dev/video0", 1280, 720, 30, "yuyv422");
         assert_eq!(params.input_format, Some("yuyv422".into()));

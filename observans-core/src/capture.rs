@@ -1,9 +1,7 @@
 use crate::camera_inventory::first_camera_device;
 use crate::config::Config;
 use crate::metrics::SharedMetrics;
-use crate::probe::{
-    probe_dshow, probe_v4l2, resolve_params_from_probe, ResolvedCaptureParams,
-};
+use crate::probe::{probe_dshow, probe_v4l2, resolve_params_from_probe, ResolvedCaptureParams};
 use crate::runtime::resolve_ffmpeg_for_current_process;
 use anyhow::{anyhow, Result};
 use observans_bus::{ClientGate, FrameSender};
@@ -264,7 +262,10 @@ fn ffmpeg_args(config: &Config, params: &ResolvedCaptureParams, hint: &ProfileHi
     let is_dshow = config.capture_format() == "dshow";
     let is_v4l2_mjpeg = config.capture_format() == "v4l2"
         && params.input_format.as_deref() == Some("mjpeg")
-        && !matches!(hint, ProfileHint::NoInputFormat | ProfileHint::DriverDefaults);
+        && !matches!(
+            hint,
+            ProfileHint::NoInputFormat | ProfileHint::DriverDefaults
+        );
 
     let mut args = vec![
         "-hide_banner".into(),
@@ -316,7 +317,10 @@ fn ffmpeg_args(config: &Config, params: &ResolvedCaptureParams, hint: &ProfileHi
     // `-input_format` is a v4l2-specific option; passing it to dshow causes
     // "Unrecognized option 'input_format'" and FFmpeg refuses to start.
     let include_fmt = params.input_format.is_some()
-        && !matches!(hint, ProfileHint::NoInputFormat | ProfileHint::DriverDefaults);
+        && !matches!(
+            hint,
+            ProfileHint::NoInputFormat | ProfileHint::DriverDefaults
+        );
     if include_fmt {
         if let Some(fmt) = &params.input_format {
             if is_dshow {
@@ -543,7 +547,10 @@ struct CaptureAttempt {
 }
 
 fn capture_failure(frames_sent: u64, error: impl Into<anyhow::Error>) -> CaptureFailure {
-    CaptureFailure { frames_sent, error: error.into() }
+    CaptureFailure {
+        frames_sent,
+        error: error.into(),
+    }
 }
 
 /// Remove attempts with identical arg-lists to avoid running the same command twice.
@@ -791,8 +798,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir()
-            .join(format!("observans-{label}-{}-{nonce}", process::id()));
+        let dir = std::env::temp_dir().join(format!("observans-{label}-{}-{nonce}", process::id()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

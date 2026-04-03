@@ -27,9 +27,17 @@ where
         return Ok(patch_device(args, "auto"));
     }
 
-    match pick(&cameras).unwrap_or(None) {
-        Some(device) => Ok(patch_device(args, &device)),
-        None => Ok(args),
+    match pick(&cameras) {
+        Ok(Some(device)) => Ok(patch_device(args, &device)),
+        Ok(None) => Ok(args),
+        Err(error)
+            if error
+                .to_string()
+                .contains("camera picker aborted by Ctrl+C") =>
+        {
+            Err(error)
+        }
+        Err(_) => Ok(args),
     }
 }
 

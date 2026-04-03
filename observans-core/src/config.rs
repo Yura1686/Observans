@@ -2,11 +2,10 @@ use crate::bootstrap::patch_args_for_camera_selection;
 use crate::camera_inventory::enumerate_cameras;
 use crate::platform::{capture_format_for, default_device_for, require_current_platform};
 use crate::runtime::resolve_ffmpeg_for_current_process;
-use crate::tui::choose_camera;
+use crate::tui::{choose_camera, terminal_is_interactive};
 use anyhow::Result;
 use clap::error::ErrorKind;
 use clap::Parser;
-use std::io::IsTerminal;
 use std::net::SocketAddr;
 
 #[derive(Debug, Clone, Parser)]
@@ -50,7 +49,7 @@ impl Config {
             .map(|arg| arg.to_string())
             .collect::<Vec<_>>();
         let platform_name = require_current_platform()?;
-        let interactive = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+        let interactive = terminal_is_interactive();
         let ffmpeg_path = resolve_ffmpeg_for_current_process(platform_name);
         let patched_args = patch_args_for_camera_selection(
             raw_args,

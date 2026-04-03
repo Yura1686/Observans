@@ -7,7 +7,7 @@ use axum::response::Html;
 use axum::routing::get;
 use axum::{Json, Router};
 use observans_bus::{ClientGate, FrameSender};
-use observans_core::{Config, SharedMetrics};
+use observans_core::{Config, SharedMetrics, Shutdown};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -28,7 +28,12 @@ impl AppState {
         config: Config,
         gate: Arc<ClientGate>,
     ) -> Self {
-        Self { tx, metrics, gate, config }
+        Self {
+            tx,
+            metrics,
+            gate,
+            config,
+        }
     }
 
     pub fn bind_addr(&self) -> SocketAddr {
@@ -59,7 +64,7 @@ pub fn app(state: AppState) -> Router {
         .with_state(state)
 }
 
-pub async fn serve(addr: SocketAddr, state: AppState) -> Result<()> {
+pub async fn serve(addr: SocketAddr, state: AppState, shutdown: Shutdown) -> Result<()> {
     let router = app(state);
     let listener = TcpListener::bind(addr).await?;
     info!(
@@ -68,7 +73,9 @@ pub async fn serve(addr: SocketAddr, state: AppState) -> Result<()> {
     );
 
     axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown.wait().await;
+        })
         .await?;
 
     Ok(())
@@ -80,8 +87,4 @@ async fn root() -> Html<String> {
 
 async fn metrics(State(state): State<AppState>) -> Json<observans_core::MetricsSnapshot> {
     Json(state.metrics.snapshot())
-}
-
-async fn shutdown_signal() {
-    let _ = tokio::signal::ctrl_c().await;
 }
