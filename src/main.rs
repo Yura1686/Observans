@@ -38,4 +38,4 @@ async fn main() -> Result<()> {
 
     let state = AppState::new(frame_tx, metrics, config, gate);
     serve(state.bind_addr(), state).await
-}і
+}
