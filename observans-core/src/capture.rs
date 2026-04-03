@@ -418,6 +418,11 @@ fn run_capture_attempt(
 
     // Offload the blocking stdout read to a dedicated thread so the main loop
     // can poll the client gate with a timeout without stalling frame delivery.
+    //
+    // The sender half is kept in the reader thread; dropping `frame_rx` while
+    // the reader is alive will cause `frame_tx.send()` to return Err, which
+    // signals the reader to exit — this is the mechanism used to unblock the
+    // reader thread when we kill ffmpeg.
     let (frame_tx, frame_rx) = std::sync::mpsc::channel::<Vec<u8>>();
     let reader = thread::spawn(move || {
         let mut stdout = stdout;
@@ -429,7 +434,9 @@ fn run_capture_attempt(
                 Ok(n) => {
                     for frame in parser.push(&buf[..n]) {
                         if frame_tx.send(frame).is_err() {
-                            return; // receiver dropped — main loop has exited
+                            // Receiver was dropped — main loop has exited.
+                            // Exit promptly so the child process can be reaped.
+                            return;
                         }
                     }
                 }
@@ -450,7 +457,17 @@ fn run_capture_attempt(
             }
             Err(RecvTimeoutError::Timeout) => {
                 if gate.client_count() == 0 {
-                    // No viewers left — kill ffmpeg and clean up.
+                    // No viewers left — kill ffmpeg and release the camera.
+                    //
+                    // Critical ordering:
+                    // 1. Kill the child process (SIGKILL on Unix, TerminateProcess on Windows).
+                    // 2. Drop `frame_rx` — this makes the reader thread's next
+                    //    `frame_tx.send()` return Err, causing it to exit promptly
+                    //    even if the OS hasn't flushed the pipe yet.
+                    // 3. Join the reader thread — ensures stdout pipe is fully closed.
+                    // 4. Call child.wait() — reaps the zombie and guarantees the
+                    //    kernel has released the /dev/videoX file descriptor.
+                    //    Only after wait() returns is the camera LED guaranteed off.
                     let _ = child.kill();
                     stopped_idle = true;
                     break;
@@ -460,12 +477,25 @@ fn run_capture_attempt(
         }
     }
 
-    // Reap the child process and the reader thread before returning.
-    let _ = child.wait();
+    // Drop the receiver BEFORE joining the reader thread.
+    // This unblocks the reader's `frame_tx.send()` call so it exits without
+    // waiting for the OS pipe buffer to be fully drained — which could take
+    // an arbitrarily long time after SIGKILL on some kernels/drivers.
+    drop(frame_rx);
+
+    // Now join the reader — it will exit quickly because its sender gets Err.
     reader.join().ok();
+
+    // Finally reap the child. This is the call that makes the kernel release
+    // all file descriptors held by the ffmpeg process, including the camera.
+    // Do NOT skip or reorder this — without wait() the process becomes a zombie
+    // and the camera device stays locked until the parent exits.
+    let _ = child.wait();
+
     let stderr_out = finish_stderr_collector(stderr_reader);
 
     if stopped_idle {
+        info!("ffmpeg reaped – camera released");
         return CaptureEnd::Idle;
     }
 
