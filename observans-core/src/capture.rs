@@ -309,8 +309,8 @@ fn ffmpeg_args(config: &Config, params: &ResolvedCaptureParams, hint: &ProfileHi
 
     // Input format (pixel/codec format from probe).
     //
-    // v4l2  → -input_format <fmt>         (kernel V4L2 ioctl-level selection)
-    // dshow → -pixel_format <fmt>  for raw (bgr24, yuyv422, …)
+    // v4l2  → -input_format <fmt>                 (kernel V4L2 ioctl-level selection)
+    // dshow → -pixel_format <fmt>  for raw        (bgr24, yuyv422, …)
     //         -vcodec <fmt>        for compressed (mjpeg, h264)
     //
     // `-input_format` is a v4l2-specific option; passing it to dshow causes
@@ -516,7 +516,7 @@ fn resolve_device(config: &Config) -> Result<String> {
     if config.capture_format() == "v4l2" {
         return Ok(config.platform_default_device().to_string());
     }
-    bail!("could not auto-resolve a Windows camera; re-run with --device \"Camera Name\"")
+    bail!("could not auto-resolve a Windows camera; re-run with --device \"Integrated Camera\"")
 }
 
 fn ffmpeg_binary() -> PathBuf {
