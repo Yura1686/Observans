@@ -6,9 +6,10 @@ use crate::shutdown::Shutdown;
 use anyhow::{anyhow, Result};
 use crossterm::cursor::{Hide, MoveTo, Show};
 use crossterm::event::{poll, read, Event, KeyCode, KeyEventKind, KeyModifiers};
-use crossterm::style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor};
+use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, size, Clear, ClearType, EnterAlternateScreen,
+    disable_raw_mode, enable_raw_mode, size, BeginSynchronizedUpdate, Clear, ClearType,
+    DisableLineWrap, EnableLineWrap, EndSynchronizedUpdate, EnterAlternateScreen,
     LeaveAlternateScreen,
 };
 use crossterm::{execute, queue};
@@ -38,8 +39,23 @@ pub struct DashboardContext {
     pub shutdown: Shutdown,
 }
 
+#[derive(Clone)]
+struct StyledLine {
+    text: String,
+    color: Color,
+}
+
+#[derive(Default)]
+struct FramePainter {
+    last_frame: Vec<String>,
+}
+
 pub fn terminal_is_interactive() -> bool {
-    std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
+    if cfg!(windows) {
+        std::io::stdout().is_terminal()
+    } else {
+        std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
+    }
 }
 
 pub fn choose_camera(cameras: &[CameraInfo]) -> Result<Option<String>> {
@@ -50,7 +66,7 @@ pub fn choose_camera(cameras: &[CameraInfo]) -> Result<Option<String>> {
             value: camera.device.clone(),
             sublabel: format!("backend: {}   id: {}", camera.backend, camera.device),
             details: format!(
-                "Camera name : {}\r\nCapture id  : {}\r\nBackend     : {}\r\nNotes       : {}",
+                "Camera name : {}\nCapture id  : {}\nBackend     : {}\nNotes       : {}",
                 camera.name, camera.device, camera.backend, camera.details
             ),
         })
@@ -60,10 +76,14 @@ pub fn choose_camera(cameras: &[CameraInfo]) -> Result<Option<String>> {
         label: "Auto detect".to_string(),
         value: "auto".to_string(),
         sublabel: "resolve the first available camera at runtime".to_string(),
-        details: "Camera name : Automatic selection\r\nCapture id  : auto\r\nBackend     : runtime probe\r\nNotes       : uses the first working camera and applies safer fallbacks on startup".to_string(),
+        details: "Camera name : Automatic selection\nCapture id  : auto\nBackend     : runtime probe\nNotes       : uses the first working camera and applies safer fallbacks on startup".to_string(),
     });
 
-    run_picker(&items)
+    match run_picker(&items) {
+        Ok(choice) => Ok(choice),
+        Err(error) if is_ctrl_c_abort(&error) => Err(error),
+        Err(_) => run_plain_picker(&items),
+    }
 }
 
 pub fn spawn_dashboard(context: DashboardContext) -> Option<thread::JoinHandle<()>> {
@@ -89,14 +109,15 @@ fn run_picker(items: &[MenuItem]) -> Result<Option<String>> {
 
     let mut stdout = io::stdout();
     let _guard = TerminalGuard::enter(&mut stdout)?;
+    let mut painter = FramePainter::default();
     let mut cursor = 0usize;
 
     loop {
-        render_picker(&mut stdout, items, cursor)?;
+        painter.paint(&mut stdout, &picker_lines(items, cursor, menu_width()))?;
         stdout.flush()?;
 
         if let Event::Key(key) = read()? {
-            if key.kind != KeyEventKind::Press {
+            if key.kind == KeyEventKind::Release {
                 continue;
             }
 
@@ -126,22 +147,58 @@ fn run_picker(items: &[MenuItem]) -> Result<Option<String>> {
     }
 }
 
+fn run_plain_picker(items: &[MenuItem]) -> Result<Option<String>> {
+    println!();
+    println!("+==============================================================+");
+    println!("|                 OBSERVANS CAMERA SELECTION                   |");
+    println!("+==============================================================+");
+
+    for (index, item) in items.iter().enumerate() {
+        println!("  {:>2}. {}", index + 1, item.label);
+        println!("      {}", item.sublabel);
+    }
+    println!();
+
+    loop {
+        print!("Select camera [1-{}], or Q to skip: ", items.len());
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim();
+
+        if trimmed.eq_ignore_ascii_case("q") {
+            return Ok(None);
+        }
+
+        if let Ok(index) = trimmed.parse::<usize>() {
+            if (1..=items.len()).contains(&index) {
+                return Ok(Some(items[index - 1].value.clone()));
+            }
+        }
+
+        println!("Invalid selection. Please enter a number or Q.");
+    }
+}
+
 fn run_dashboard(context: DashboardContext) -> Result<()> {
     let mut stdout = io::stdout();
     let _guard = TerminalGuard::enter(&mut stdout)?;
+    let mut painter = FramePainter::default();
 
     loop {
-        render_dashboard(&mut stdout, &context)?;
+        let lines = dashboard_lines(&context, dashboard_width());
+        painter.paint(&mut stdout, &lines)?;
         stdout.flush()?;
 
         if context.shutdown.is_triggered() {
             break;
         }
 
-        if poll(Duration::from_millis(150))? {
+        if poll(Duration::from_millis(200))? {
             match read()? {
                 Event::Key(key)
-                    if key.kind == KeyEventKind::Press
+                    if key.kind != KeyEventKind::Release
                         && matches!(key.code, KeyCode::Char('c'))
                         && key.modifiers.contains(KeyModifiers::CONTROL) =>
                 {
@@ -152,7 +209,7 @@ fn run_dashboard(context: DashboardContext) -> Result<()> {
                     break;
                 }
                 Event::Key(key)
-                    if key.kind == KeyEventKind::Press
+                    if key.kind != KeyEventKind::Release
                         && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc) =>
                 {
                     context
@@ -169,152 +226,127 @@ fn run_dashboard(context: DashboardContext) -> Result<()> {
     Ok(())
 }
 
-fn render_picker(stdout: &mut io::Stdout, items: &[MenuItem], cursor: usize) -> Result<()> {
-    let width = menu_width();
+fn picker_lines(items: &[MenuItem], cursor: usize, width: usize) -> Vec<StyledLine> {
     let selected = &items[cursor];
-    queue!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
+    let mut lines = Vec::new();
 
-    draw_banner(
-        stdout,
+    push_banner(
+        &mut lines,
         width,
         "OBSERVANS CLI CAMERA CONTROL",
         "ASCII / ANSI camera picker",
-    )?;
-    draw_section_title(stdout, width, "CAMERA INVENTORY")?;
-    draw_status_line(
-        stdout,
+    );
+    push_section_title(&mut lines, width, "CAMERA INVENTORY");
+    push_status_line(
+        &mut lines,
         width,
-        "[....]",
-        Color::DarkGrey,
+        LogLevel::Info,
         "TUI",
         &format!(
             "{} cameras discovered - use arrows or 1..9 to select - ENTER to continue",
             items.len().saturating_sub(1)
         ),
-    )?;
+    );
 
     for (index, item) in items.iter().enumerate() {
-        let prefix = if index == cursor { ">" } else { " " };
-        let color = if index == cursor {
-            Color::Green
-        } else {
-            Color::White
-        };
-        let label = fit(&item.label, width.saturating_sub(20));
-        let line = format!(
-            " {prefix} [{:>2}] {:<28} {}",
-            index + 1,
-            label,
-            item.sublabel
+        let marker = if index == cursor { ">" } else { " " };
+        let number = format!("[{:>2}]", index + 1);
+        let label = fit(&item.label, 28);
+        let content = format!(" {marker} {number} {:<28} {}", label, item.sublabel);
+        push_inner_line(
+            &mut lines,
+            width,
+            &content,
+            if index == cursor {
+                Color::Green
+            } else {
+                Color::White
+            },
         );
-        draw_inner_line(
-            stdout,
-            width,
-            &pad_to_width(&line, width.saturating_sub(4)),
-            color,
-        )?;
     }
 
-    draw_section_end(stdout, width)?;
-    draw_section_title(stdout, width, "SELECTION PREVIEW")?;
+    push_section_end(&mut lines, width);
+    push_section_title(&mut lines, width, "SELECTION PREVIEW");
     for line in selected.details.lines() {
-        draw_inner_line(
-            stdout,
-            width,
-            &fit(line, width.saturating_sub(6)),
-            Color::Cyan,
-        )?;
+        push_inner_line(&mut lines, width, line, Color::Cyan);
     }
-    draw_section_end(stdout, width)?;
-    draw_section_title(stdout, width, "CONTROLS")?;
-    draw_inner_line(
-        stdout,
+    push_section_end(&mut lines, width);
+    push_section_title(&mut lines, width, "CONTROLS");
+    push_inner_line(
+        &mut lines,
         width,
-        "UP/DOWN  move   ENTER  confirm   Q / ESC  skip camera picker",
+        "UP/DOWN move   ENTER confirm   Q / ESC skip camera picker",
         Color::DarkGrey,
-    )?;
-    draw_section_end(stdout, width)?;
+    );
+    push_section_end(&mut lines, width);
 
-    Ok(())
+    lines
 }
 
-fn render_dashboard(stdout: &mut io::Stdout, context: &DashboardContext) -> Result<()> {
-    let width = dashboard_width();
+fn dashboard_lines(context: &DashboardContext, width: usize) -> Vec<StyledLine> {
     let metrics = context.metrics.snapshot();
     let logs = context.logs.snapshot(LOG_LINES);
     let urls = stream_urls(&context.config);
+    let mut lines = Vec::new();
 
-    queue!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
-    draw_banner(
-        stdout,
+    push_banner(
+        &mut lines,
         width,
         "OBSERVANS CLI CONTROL PLANE",
         "live stream status / metrics / errors / logs",
-    )?;
+    );
 
-    draw_section_title(stdout, width, "STREAM ENDPOINTS")?;
+    push_section_title(&mut lines, width, "STREAM ENDPOINTS");
     for url in &urls {
-        draw_status_line(stdout, width, "[++++]", Color::Green, "WEB", url)?;
+        push_status_line(&mut lines, width, LogLevel::Ok, "WEB", url);
     }
-    draw_status_line(
-        stdout,
+    push_status_line(
+        &mut lines,
         width,
-        "[....]",
-        Color::DarkGrey,
+        LogLevel::Info,
         "CFG",
         &format!("camera request: {}", context.config.device),
-    )?;
-    draw_section_end(stdout, width)?;
+    );
+    push_section_end(&mut lines, width);
 
-    draw_section_title(stdout, width, "LIVE TELEMETRY")?;
+    push_section_title(&mut lines, width, "LIVE TELEMETRY");
     for line in dashboard_metrics(&metrics, logs.warn_count, logs.error_count) {
-        draw_inner_line(stdout, width, &line, Color::White)?;
+        push_inner_line(&mut lines, width, &line, Color::White);
     }
-    draw_section_end(stdout, width)?;
+    push_section_end(&mut lines, width);
 
-    draw_section_title(stdout, width, "EVENT FEED")?;
+    push_section_title(&mut lines, width, "EVENT FEED");
     if logs.entries.is_empty() {
-        draw_status_line(
-            stdout,
+        push_status_line(
+            &mut lines,
             width,
-            "[~~~~]",
-            Color::Yellow,
+            LogLevel::Wait,
             "SYS",
             "waiting for runtime events...",
-        )?;
+        );
     } else {
         for entry in &logs.entries {
-            let message = fit(
-                &format!(
-                    "{} {:<3} {}",
-                    entry.timestamp,
-                    entry.tag,
-                    entry.message.replace('\n', " ")
-                ),
-                width.saturating_sub(22),
+            let message = format!(
+                "{} {:<3} {}",
+                entry.timestamp,
+                entry.tag,
+                entry.message.replace('\n', " ")
             );
-            draw_status_line(
-                stdout,
-                width,
-                entry.level.token(),
-                token_color(entry.level),
-                &entry.tag,
-                &message,
-            )?;
+            push_status_line(&mut lines, width, entry.level, &entry.tag, &message);
         }
     }
-    draw_section_end(stdout, width)?;
+    push_section_end(&mut lines, width);
 
-    draw_section_title(stdout, width, "HOTKEYS")?;
-    draw_inner_line(
-        stdout,
+    push_section_title(&mut lines, width, "HOTKEYS");
+    push_inner_line(
+        &mut lines,
         width,
-        "CTRL+C  graceful shutdown    Q / ESC  exit dashboard and stop server",
+        "CTRL+C graceful shutdown    Q / ESC exit dashboard and stop server",
         Color::DarkGrey,
-    )?;
-    draw_section_end(stdout, width)?;
+    );
+    push_section_end(&mut lines, width);
 
-    Ok(())
+    lines
 }
 
 fn dashboard_metrics(metrics: &MetricsSnapshot, warn_count: u64, error_count: u64) -> Vec<String> {
@@ -344,8 +376,8 @@ fn dashboard_metrics(metrics: &MetricsSnapshot, warn_count: u64, error_count: u6
             metrics.res, metrics.fps_actual, metrics.fps_target
         ),
         format!(
-            " cpu / ram : {:>5.1}% / {:>5.1}%{:>9}frame age  : {}",
-            metrics.cpu, metrics.ram_pct, "", frame_age
+            " cpu / ram : {:>5.1}% / {:>5.1}%      frame age  : {}",
+            metrics.cpu, metrics.ram_pct, frame_age
         ),
         format!(
             " queue     : drops {:<16} avg frame  : {:.1} KB",
@@ -378,119 +410,56 @@ fn primary_local_ip() -> Option<IpAddr> {
     Some(socket.local_addr().ok()?.ip())
 }
 
-fn token_color(level: LogLevel) -> Color {
-    match level {
-        LogLevel::Info => Color::DarkGrey,
-        LogLevel::Ok => Color::Green,
-        LogLevel::Wait => Color::Yellow,
-        LogLevel::Warn => Color::Yellow,
-        LogLevel::Error => Color::Red,
-    }
-}
-
-fn draw_banner(stdout: &mut io::Stdout, width: usize, title: &str, subtitle: &str) -> Result<()> {
-    let bar = format!("+{}+", "=".repeat(width.saturating_sub(2)));
-    queue!(
-        stdout,
-        SetForegroundColor(Color::Cyan),
-        Print(format!("{bar}\r\n")),
-        ResetColor
-    )?;
-    draw_inner_line(
-        stdout,
-        width,
-        &center(title, width.saturating_sub(4)),
+fn push_banner(lines: &mut Vec<StyledLine>, width: usize, title: &str, subtitle: &str) {
+    let border = format!("+{}+", "=".repeat(width.saturating_sub(2)));
+    lines.push(styled(border.clone(), Color::Cyan));
+    lines.push(styled(
+        framed(width, &center(title, width.saturating_sub(4))),
         Color::White,
-    )?;
-    draw_inner_line(
-        stdout,
-        width,
-        &center(subtitle, width.saturating_sub(4)),
+    ));
+    lines.push(styled(
+        framed(width, &center(subtitle, width.saturating_sub(4))),
         Color::DarkGrey,
-    )?;
-    queue!(
-        stdout,
-        SetForegroundColor(Color::Cyan),
-        Print(format!("{bar}\r\n\r\n")),
-        ResetColor
-    )?;
-    Ok(())
+    ));
+    lines.push(styled(border, Color::Cyan));
+    lines.push(styled(String::new(), Color::Reset));
 }
 
-fn draw_section_title(stdout: &mut io::Stdout, width: usize, title: &str) -> Result<()> {
-    let used = 7 + title.len();
+fn push_section_title(lines: &mut Vec<StyledLine>, width: usize, title: &str) {
+    let prefix = format!("+--[ {} ]", title);
     let line = format!(
-        "+--[ {} ]{}+",
-        title,
-        "-".repeat(width.saturating_sub(used + 1))
+        "{}{}+",
+        prefix,
+        "-".repeat(width.saturating_sub(prefix.chars().count() + 1))
     );
-    queue!(
-        stdout,
-        SetForegroundColor(Color::Cyan),
-        Print(format!("{}\r\n", fit(&line, width))),
-        ResetColor
-    )?;
-    Ok(())
+    lines.push(styled(line, Color::Cyan));
 }
 
-fn draw_section_end(stdout: &mut io::Stdout, width: usize) -> Result<()> {
-    let line = format!("+{}+", "-".repeat(width.saturating_sub(2)));
-    queue!(
-        stdout,
-        SetForegroundColor(Color::Cyan),
-        Print(format!("{line}\r\n\r\n")),
-        ResetColor
-    )?;
-    Ok(())
+fn push_section_end(lines: &mut Vec<StyledLine>, width: usize) {
+    lines.push(styled(
+        format!("+{}+", "-".repeat(width.saturating_sub(2))),
+        Color::Cyan,
+    ));
+    lines.push(styled(String::new(), Color::Reset));
 }
 
-fn draw_status_line(
-    stdout: &mut io::Stdout,
+fn push_status_line(
+    lines: &mut Vec<StyledLine>,
     width: usize,
-    token: &str,
-    token_color: Color,
+    level: LogLevel,
     tag: &str,
     message: &str,
-) -> Result<()> {
-    let content_width = width.saturating_sub(4);
-    let tag = format!("{:<3}", fit(tag, 3));
-    let message = fit(message, content_width.saturating_sub(12));
-    queue!(
-        stdout,
-        SetForegroundColor(Color::Cyan),
-        Print("| "),
-        SetForegroundColor(token_color),
-        SetAttribute(Attribute::Bold),
-        Print(token),
-        SetAttribute(Attribute::Reset),
-        ResetColor,
-        Print(" "),
-        SetForegroundColor(Color::Blue),
-        Print(tag),
-        ResetColor,
-        Print(" "),
-        Print(pad_to_width(&message, content_width.saturating_sub(10))),
-        SetForegroundColor(Color::Cyan),
-        Print(" |\r\n"),
-        ResetColor
-    )?;
-    Ok(())
+) {
+    let body = format!("{} {:<3} {}", level.token(), fit(tag, 3), message);
+    push_inner_line(lines, width, &body, token_color(level));
 }
 
-fn draw_inner_line(stdout: &mut io::Stdout, width: usize, text: &str, color: Color) -> Result<()> {
-    let padded = pad_to_width(text, width.saturating_sub(4));
-    queue!(
-        stdout,
-        SetForegroundColor(Color::Cyan),
-        Print("| "),
-        SetForegroundColor(color),
-        Print(padded),
-        ResetColor,
-        SetForegroundColor(Color::Cyan),
-        Print(" |\r\n"),
-        ResetColor
-    )?;
-    Ok(())
+fn push_inner_line(lines: &mut Vec<StyledLine>, width: usize, text: &str, color: Color) {
+    lines.push(styled(framed(width, text), color));
+}
+
+fn framed(width: usize, text: &str) -> String {
+    format!("| {} |", pad_to_width(text, width.saturating_sub(4)))
 }
 
 fn dashboard_width() -> usize {
@@ -509,15 +478,18 @@ fn menu_width() -> usize {
         .clamp(MIN_WIDTH, MENU_WIDTH)
 }
 
-fn center(text: &str, width: usize) -> String {
-    let text = fit(text, width);
-    let len = text.chars().count();
-    if len >= width {
-        return text;
+fn token_color(level: LogLevel) -> Color {
+    match level {
+        LogLevel::Info => Color::Grey,
+        LogLevel::Ok => Color::Green,
+        LogLevel::Wait => Color::Yellow,
+        LogLevel::Warn => Color::Yellow,
+        LogLevel::Error => Color::Red,
     }
-    let left = (width - len) / 2;
-    let right = width - len - left;
-    format!("{}{}{}", " ".repeat(left), text, " ".repeat(right))
+}
+
+fn styled(text: String, color: Color) -> StyledLine {
+    StyledLine { text, color }
 }
 
 fn fit(text: &str, width: usize) -> String {
@@ -544,26 +516,119 @@ fn pad_to_width(text: &str, width: usize) -> String {
     out
 }
 
-struct TerminalGuard;
+fn center(text: &str, width: usize) -> String {
+    let text = fit(text, width);
+    let len = text.chars().count();
+    if len >= width {
+        return text;
+    }
+
+    let left = (width - len) / 2;
+    let right = width - len - left;
+    format!("{}{}{}", " ".repeat(left), text, " ".repeat(right))
+}
+
+fn is_ctrl_c_abort(error: &anyhow::Error) -> bool {
+    error
+        .to_string()
+        .contains("camera picker aborted by Ctrl+C")
+}
+
+impl FramePainter {
+    fn paint(&mut self, stdout: &mut io::Stdout, lines: &[StyledLine]) -> Result<()> {
+        let current_frame = lines
+            .iter()
+            .map(|line| line.text.clone())
+            .collect::<Vec<_>>();
+
+        if current_frame == self.last_frame {
+            return Ok(());
+        }
+
+        queue!(stdout, BeginSynchronizedUpdate, MoveTo(0, 0))?;
+        for (row, line) in lines.iter().enumerate() {
+            queue!(
+                stdout,
+                MoveTo(0, row as u16),
+                SetForegroundColor(line.color),
+                Print(&line.text),
+                ResetColor,
+                Clear(ClearType::UntilNewLine)
+            )?;
+        }
+
+        for row in lines.len()..self.last_frame.len() {
+            queue!(stdout, MoveTo(0, row as u16), Clear(ClearType::CurrentLine))?;
+        }
+
+        queue!(stdout, EndSynchronizedUpdate)?;
+        self.last_frame = current_frame;
+        Ok(())
+    }
+}
+
+struct TerminalGuard {
+    use_alternate_screen: bool,
+}
 
 impl TerminalGuard {
     fn enter(stdout: &mut io::Stdout) -> Result<Self> {
         enable_raw_mode()?;
-        execute!(stdout, EnterAlternateScreen, Hide, Clear(ClearType::All))?;
-        Ok(Self)
+        let use_alternate_screen = !cfg!(windows);
+
+        if use_alternate_screen {
+            execute!(
+                stdout,
+                EnterAlternateScreen,
+                DisableLineWrap,
+                Hide,
+                Clear(ClearType::All),
+                MoveTo(0, 0)
+            )?;
+        } else {
+            execute!(
+                stdout,
+                DisableLineWrap,
+                Hide,
+                Clear(ClearType::All),
+                MoveTo(0, 0)
+            )?;
+        }
+
+        Ok(Self {
+            use_alternate_screen,
+        })
     }
 }
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), Show, LeaveAlternateScreen, ResetColor);
+
+        if self.use_alternate_screen {
+            let _ = execute!(
+                io::stdout(),
+                Show,
+                EnableLineWrap,
+                LeaveAlternateScreen,
+                ResetColor
+            );
+        } else {
+            let _ = execute!(
+                io::stdout(),
+                Show,
+                EnableLineWrap,
+                ResetColor,
+                Clear(ClearType::All),
+                MoveTo(0, 0)
+            );
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{center, fit, pad_to_width};
+    use super::{center, fit, framed, pad_to_width};
 
     #[test]
     fn fit_truncates_without_wrapping() {
@@ -578,5 +643,13 @@ mod tests {
     #[test]
     fn center_balances_padding() {
         assert_eq!(center("OBS", 7), "  OBS  ");
+    }
+
+    #[test]
+    fn framed_lines_preserve_requested_width() {
+        let line = framed(22, "hello");
+        assert_eq!(line.chars().count(), 22);
+        assert!(line.starts_with("| "));
+        assert!(line.ends_with(" |"));
     }
 }
