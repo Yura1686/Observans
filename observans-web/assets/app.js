@@ -29,6 +29,10 @@ let recordedMimeType = "video/webm";
 let recordStartedAt = 0;
 let recordTicker = null;
 
+function syncViewportHeight() {
+  document.documentElement.style.setProperty("--app-height", `${window.innerHeight}px`);
+}
+
 function withTs(path) {
   const query = new URLSearchParams(params);
   query.set("t", Date.now().toString());
@@ -275,6 +279,7 @@ function syncFullscreenUi() {
   const active = document.fullscreenElement === streamFrame;
   document.body.classList.toggle("viewer-fullscreen", active);
   fullscreenBtn.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
+  syncViewportHeight();
 }
 
 streamSource.onload = () => {
@@ -297,6 +302,7 @@ stopBtn.addEventListener("click", stopRecording);
 saveBtn.addEventListener("click", saveRecording);
 fullscreenBtn.addEventListener("click", toggleFullscreen);
 document.addEventListener("fullscreenchange", syncFullscreenUi);
+window.addEventListener("resize", syncViewportHeight);
 
 async function tick() {
   try {
@@ -393,5 +399,6 @@ document.addEventListener("visibilitychange", () => {
 });
 
 connectStream();
+syncViewportHeight();
 setInterval(tick, 1000);
 tick();

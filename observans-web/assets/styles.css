@@ -102,26 +102,32 @@ select {
   font: inherit;
 }
 
+html {
+  --app-height: 100dvh;
+}
+
 .shell {
   width: min(1520px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 24px 0 36px;
+  padding: 14px 0 18px;
   position: relative;
   z-index: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
 }
 
 .masthead {
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-bottom: 22px;
   text-align: center;
   animation: riseIn 0.9s ease-out both;
 }
 
 .brand-title {
   font-family: "Segoe UI Variable Display", "Avenir Next", "Trebuchet MS", "Ubuntu", "Segoe UI", sans-serif;
-  font-size: clamp(34px, 4.6vw, 56px);
+  font-size: clamp(30px, 3.8vw, 48px);
   font-weight: 780;
   line-height: 0.96;
   letter-spacing: 0.018em;
@@ -134,10 +140,13 @@ select {
   display: grid;
   grid-template-columns: minmax(0, 1.72fr) minmax(340px, 430px);
   grid-template-areas:
-    "stream side"
-    "telemetry side";
+    "stream summary"
+    "stream controls"
+    "telemetry version";
+  grid-template-rows: 1.46fr 0.74fr 0.92fr;
   gap: 20px;
   align-items: stretch;
+  min-height: 0;
 }
 
 .card {
@@ -145,14 +154,15 @@ select {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)), var(--panel);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow);
+  min-height: 0;
 }
 
 .stream-card {
   grid-area: stream;
-  border-radius: 30px;
+  border-radius: 28px;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   animation: riseIn 1s ease-out both;
 }
 
@@ -297,20 +307,21 @@ select {
 .stream-footer {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  gap: 12px;
-  padding: 16px 18px 12px;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px 12px;
 }
 
 .pill-row {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 10px;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .pill {
-  min-height: 42px;
-  padding: 0 16px;
+  min-height: 36px;
+  padding: 0 14px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.11);
   background: rgba(255, 255, 255, 0.05);
@@ -319,10 +330,11 @@ select {
   align-items: center;
   gap: 8px;
   color: var(--text-soft);
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 780;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .pill strong {
@@ -341,14 +353,16 @@ select {
 .stream-summary {
   display: grid;
   justify-items: end;
-  gap: 10px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .status-line {
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--text-soft);
+  text-align: right;
 }
 
 .status-line.good {
@@ -360,42 +374,44 @@ select {
 }
 
 .resolution-pill {
-  min-width: 120px;
+  min-width: 116px;
   justify-content: center;
 }
 
 .stream-meta-line {
-  padding: 0 18px 18px;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  max-width: 360px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
 }
 
 .sidebar {
-  grid-area: side;
-  display: grid;
-  grid-template-rows: 1.15fr auto auto;
-  gap: 20px;
+  display: contents;
 }
 
 .summary-card,
 .controls-card,
 .version-card,
 .telemetry-card {
-  border-radius: 24px;
+  border-radius: 22px;
   animation: riseIn 1.05s ease-out both;
 }
 
 .summary-card {
+  grid-area: summary;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
 .summary-row {
-  min-height: 74px;
-  padding: 0 18px;
+  min-height: 62px;
+  padding: 0 16px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 14px;
@@ -407,7 +423,7 @@ select {
 }
 
 .summary-label {
-  font-size: 14px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -415,7 +431,7 @@ select {
 
 .summary-value {
   text-align: right;
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 900;
   color: var(--text-main);
   letter-spacing: 0.02em;
@@ -430,7 +446,7 @@ select {
 }
 
 .summary-pane {
-  padding: 18px 18px 20px;
+  padding: 14px 16px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -443,14 +459,14 @@ select {
 
 .pane-title {
   color: #f6fbff;
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .pane-sub {
-  margin-top: 14px;
+  margin-top: 10px;
   text-align: center;
   color: var(--text-soft);
   font-size: 11px;
@@ -460,15 +476,15 @@ select {
 }
 
 .battery-shell {
-  margin-top: 16px;
-  width: 90px;
+  margin-top: 12px;
+  width: 76px;
   display: grid;
   justify-items: center;
 }
 
 .battery-cap {
-  width: 34px;
-  height: 8px;
+  width: 28px;
+  height: 6px;
   border: 1px solid rgba(255, 255, 255, 0.26);
   border-bottom: 0;
   border-top-left-radius: 4px;
@@ -478,11 +494,11 @@ select {
 
 .battery-body {
   position: relative;
-  width: 78px;
-  height: 138px;
+  width: 66px;
+  height: 114px;
   margin-top: 2px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 18px;
+  border-radius: 16px;
   overflow: hidden;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -505,45 +521,48 @@ select {
   display: grid;
   place-items: center;
   color: var(--text-main);
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 900;
 }
 
 .stream-pane {
-  gap: 14px;
+  gap: 12px;
 }
 
 .stack-pill {
-  width: min(170px, 100%);
-  min-height: 42px;
-  padding: 0 14px;
+  width: min(158px, 100%);
+  min-height: 38px;
+  padding: 0 12px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.05);
   display: grid;
   place-items: center;
   color: var(--text-main);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .controls-card {
-  padding: 22px;
+  grid-area: controls;
+  padding: 18px;
   display: grid;
-  gap: 18px;
+  gap: 14px;
+  align-content: center;
 }
 
 .recording-panel {
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 16px;
-  padding: 16px 18px;
+  gap: 14px;
+  padding: 14px 16px;
 }
 
 .recording-dot {
@@ -566,7 +585,7 @@ select {
 }
 
 .recording-time {
-  font-size: clamp(28px, 3vw, 36px);
+  font-size: clamp(24px, 2.5vw, 32px);
   font-weight: 900;
   letter-spacing: 0.1em;
   color: var(--text-main);
@@ -575,12 +594,12 @@ select {
 .button-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 .button-slot {
   position: relative;
-  min-height: 58px;
+  min-height: 52px;
 }
 
 .button-slot .action-btn {
@@ -591,11 +610,11 @@ select {
 .action-btn {
   appearance: none;
   border: 0;
-  border-radius: 18px;
-  min-height: 58px;
-  padding: 0 16px;
+  border-radius: 16px;
+  min-height: 52px;
+  padding: 0 14px;
   font: inherit;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
   letter-spacing: 0.08em;
   color: var(--text-main);
@@ -636,16 +655,18 @@ select {
 }
 
 .version-card {
-  padding: 22px 20px;
+  grid-area: version;
+  padding: 18px 18px 16px;
   display: grid;
-  gap: 16px;
+  gap: 14px;
   align-content: center;
+  overflow: hidden;
 }
 
 .version-title {
   text-align: center;
   font-family: "Avenir Next Condensed", "Trebuchet MS", sans-serif;
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1.05;
   letter-spacing: 0.08em;
   color: var(--text-main);
@@ -654,7 +675,7 @@ select {
 .info-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 18px;
+  gap: 12px 16px;
 }
 
 .info-pair {
@@ -674,7 +695,7 @@ select {
 }
 
 .info-value {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
   line-height: 1.35;
   color: var(--text-main);
@@ -683,33 +704,33 @@ select {
 
 .telemetry-card {
   grid-area: telemetry;
-  padding: 22px 24px;
+  padding: 18px 22px;
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .telemetry-group {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .telemetry-row {
   display: grid;
-  grid-template-columns: 118px minmax(0, 1fr) 94px;
+  grid-template-columns: 102px minmax(0, 1fr) 82px;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
 .telemetry-label {
-  font-size: clamp(26px, 2.4vw, 38px);
+  font-size: clamp(22px, 2vw, 32px);
   font-weight: 900;
   color: var(--text-main);
   letter-spacing: 0.02em;
 }
 
 .telemetry-bar {
-  height: 32px;
-  border-radius: 16px;
+  height: 24px;
+  border-radius: 14px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -730,14 +751,14 @@ select {
 .telemetry-value {
   text-align: right;
   color: var(--text-main);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 900;
 }
 
 .telemetry-meta {
-  padding-left: 134px;
+  padding-left: 116px;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
 }
 
@@ -761,33 +782,52 @@ body.viewer-fullscreen {
   overflow: hidden;
 }
 
+@media (min-width: 1221px) {
+  body {
+    overflow: hidden;
+  }
+
+  .shell {
+    height: calc(var(--app-height) - 12px);
+  }
+}
+
 @media (max-width: 1220px) {
   .dashboard {
     grid-template-columns: 1fr;
     grid-template-areas:
       "stream"
-      "side"
+      "summary"
+      "controls"
+      "version"
       "telemetry";
+    grid-template-rows: auto;
+    min-height: unset;
   }
 
   .sidebar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: auto;
+    display: contents;
   }
 
   .version-card {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 }
 
 @media (max-width: 760px) {
+  body {
+    overflow-y: auto;
+  }
+
   .shell {
     width: min(100% - 20px, 100%);
     padding: 18px 0 24px;
+    height: auto;
+    min-height: 100dvh;
   }
 
   .masthead {
-    margin-bottom: 16px;
+    margin-bottom: 2px;
   }
 
   .brand-title {
@@ -802,6 +842,7 @@ body.viewer-fullscreen {
   .stream-footer {
     flex-direction: column;
     align-items: flex-start;
+    padding: 12px 14px 14px;
   }
 
   .stream-summary {
@@ -814,8 +855,17 @@ body.viewer-fullscreen {
     font-size: 13px;
   }
 
+   .pill-row {
+    flex-wrap: wrap;
+  }
+
+  .stream-meta-line,
+  .status-line {
+    text-align: left;
+  }
+
   .sidebar {
-    grid-template-columns: 1fr;
+    display: contents;
   }
 
   .summary-row {
