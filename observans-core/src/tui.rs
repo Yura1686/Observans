@@ -230,12 +230,7 @@ fn picker_lines(items: &[MenuItem], cursor: usize, width: usize) -> Vec<StyledLi
     let selected = &items[cursor];
     let mut lines = Vec::new();
 
-    push_banner(
-        &mut lines,
-        width,
-        "OBSERVANS CLI CAMERA CONTROL",
-        "ASCII / ANSI camera picker",
-    );
+    push_banner(&mut lines, width, "OBSERVANS");
     push_section_title(&mut lines, width, "CAMERA INVENTORY");
     push_status_line(
         &mut lines,
@@ -289,12 +284,7 @@ fn dashboard_lines(context: &DashboardContext, width: usize) -> Vec<StyledLine> 
     let urls = stream_urls(&context.config);
     let mut lines = Vec::new();
 
-    push_banner(
-        &mut lines,
-        width,
-        "OBSERVANS CLI CONTROL PLANE",
-        "live stream status / metrics / errors / logs",
-    );
+    push_banner(&mut lines, width, "OBSERVANS");
 
     push_section_title(&mut lines, width, "STREAM ENDPOINTS");
     for url in &urls {
@@ -356,36 +346,96 @@ fn dashboard_metrics(metrics: &MetricsSnapshot, warn_count: u64, error_count: u6
         "--".to_string()
     };
 
+    let left = [
+        ("host", fit(&metrics.hostname, 24)),
+        ("backend", fit(&metrics.capture_backend, 24)),
+        ("clients", metrics.clients.to_string()),
+        ("video", metrics.res.clone()),
+        (
+            "cpu / ram",
+            format!("{:>5.1}% / {:>5.1}%", metrics.cpu, metrics.ram_pct),
+        ),
+        ("queue", format!("drops {}", metrics.queue_drops)),
+        ("restarts", metrics.restarts.to_string()),
+    ];
+
+    let right = [
+        ("platform", metrics.platform_name.clone()),
+        ("input", fit(&metrics.stream_input, 28)),
+        ("uptime", metrics.uptime.clone()),
+        (
+            "fps",
+            format!("{:.1} / {}", metrics.fps_actual, metrics.fps_target),
+        ),
+        ("frame age", frame_age),
+        ("avg frame", format!("{:.1} KB", metrics.avg_frame_kb)),
+        (
+            "warnings",
+            format!("{}   errors: {}", warn_count, error_count),
+        ),
+    ];
+
+    let left_label_width = left.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
+    let left_value_width = left
+        .iter()
+        .map(|(_, value)| value.chars().count())
+        .max()
+        .unwrap_or(0);
+    let right_label_width = right
+        .iter()
+        .map(|(label, _)| label.len())
+        .max()
+        .unwrap_or(0);
+
     vec![
         format!(
-            " host      : {:<24} platform   : {}",
-            fit(&metrics.hostname, 24),
-            metrics.platform_name
+            " {left_label:>left_label_width$} : {left_value:<left_value_width$}    {right_label:>right_label_width$} : {right_value}",
+            left_label = left[0].0,
+            left_value = left[0].1,
+            right_label = right[0].0,
+            right_value = right[0].1,
         ),
         format!(
-            " backend   : {:<24} input      : {}",
-            fit(&metrics.capture_backend, 24),
-            fit(&metrics.stream_input, 28)
+            " {left_label:>left_label_width$} : {left_value:<left_value_width$}    {right_label:>right_label_width$} : {right_value}",
+            left_label = left[1].0,
+            left_value = left[1].1,
+            right_label = right[1].0,
+            right_value = right[1].1,
         ),
         format!(
-            " clients   : {:<24} uptime     : {}",
-            metrics.clients, metrics.uptime
+            " {left_label:>left_label_width$} : {left_value:<left_value_width$}    {right_label:>right_label_width$} : {right_value}",
+            left_label = left[2].0,
+            left_value = left[2].1,
+            right_label = right[2].0,
+            right_value = right[2].1,
         ),
         format!(
-            " video     : {:<24} fps        : {:.1} / {}",
-            metrics.res, metrics.fps_actual, metrics.fps_target
+            " {left_label:>left_label_width$} : {left_value:<left_value_width$}    {right_label:>right_label_width$} : {right_value}",
+            left_label = left[3].0,
+            left_value = left[3].1,
+            right_label = right[3].0,
+            right_value = right[3].1,
         ),
         format!(
-            " cpu / ram : {:>5.1}% / {:>5.1}%      frame age  : {}",
-            metrics.cpu, metrics.ram_pct, frame_age
+            " {left_label:>left_label_width$} : {left_value:<left_value_width$}    {right_label:>right_label_width$} : {right_value}",
+            left_label = left[4].0,
+            left_value = left[4].1,
+            right_label = right[4].0,
+            right_value = right[4].1,
         ),
         format!(
-            " queue     : drops {:<16} avg frame  : {:.1} KB",
-            metrics.queue_drops, metrics.avg_frame_kb
+            " {left_label:>left_label_width$} : {left_value:<left_value_width$}    {right_label:>right_label_width$} : {right_value}",
+            left_label = left[5].0,
+            left_value = left[5].1,
+            right_label = right[5].0,
+            right_value = right[5].1,
         ),
         format!(
-            " restarts  : {:<24} warnings   : {}   errors: {}",
-            metrics.restarts, warn_count, error_count
+            " {left_label:>left_label_width$} : {left_value:<left_value_width$}    {right_label:>right_label_width$} : {right_value}",
+            left_label = left[6].0,
+            left_value = left[6].1,
+            right_label = right[6].0,
+            right_value = right[6].1,
         ),
     ]
 }
@@ -410,16 +460,12 @@ fn primary_local_ip() -> Option<IpAddr> {
     Some(socket.local_addr().ok()?.ip())
 }
 
-fn push_banner(lines: &mut Vec<StyledLine>, width: usize, title: &str, subtitle: &str) {
+fn push_banner(lines: &mut Vec<StyledLine>, width: usize, title: &str) {
     let border = format!("+{}+", "=".repeat(width.saturating_sub(2)));
     lines.push(styled(border.clone(), Color::Cyan));
     lines.push(styled(
         framed(width, &center(title, width.saturating_sub(4))),
         Color::White,
-    ));
-    lines.push(styled(
-        framed(width, &center(subtitle, width.saturating_sub(4))),
-        Color::DarkGrey,
     ));
     lines.push(styled(border, Color::Cyan));
     lines.push(styled(String::new(), Color::Reset));
