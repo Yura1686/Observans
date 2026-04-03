@@ -8,11 +8,17 @@
 </head>
 <body>
   <main class="shell">
+    <header class="masthead">
+      <h1 class="brand-title">Observans</h1>
+    </header>
+
     <section class="dashboard">
       <section class="stream-card card">
         <div class="stream-frame" id="stream-frame">
           <canvas id="stream-stage" class="stage" aria-label="observans live stage"></canvas>
           <img id="stream-source" class="stream-source" src="" alt="observans stream source">
+          <div class="video-vignette"></div>
+          <div class="video-overlay"></div>
 
           <div class="stream-placeholder" id="stream-placeholder" aria-hidden="true">
             <div class="placeholder-head"></div>
@@ -69,7 +75,7 @@
               <h2 class="pane-title">STREAM</h2>
               <div class="stack-pill" id="backend-pill">--</div>
               <div class="stack-pill" id="frame-size-pill">--</div>
-              <div class="stack-pill" id="restart-pill">RST:0</div>
+              <div class="stack-pill" id="restart-pill">RST 0</div>
             </section>
           </div>
         </section>

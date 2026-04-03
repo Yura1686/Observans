@@ -60,7 +60,7 @@ function connectStream() {
   }
 
   setLiveState(false);
-  setStatus("CONNECTING", false);
+  setStatus("connecting to twilight feed", false);
   streamSource.src = withTs("/stream");
   updateRecordingUi();
 }
@@ -162,13 +162,13 @@ function updateRecordingUi() {
 function startRecording() {
   if (!window.MediaRecorder || !stage.captureStream || !stageCtx) {
     recordingState.textContent = "recording unsupported";
-    setStatus("RECORDING UNSUPPORTED", false);
+    setStatus("recording unsupported in this browser", false);
     return;
   }
 
   if (!streamAlive || stage.width === 0 || stage.height === 0) {
     recordingState.textContent = "waiting for live stream";
-    setStatus("WAIT FOR LIVE STREAM", false);
+    setStatus("wait for the live stream before recording", false);
     return;
   }
 
@@ -185,7 +185,7 @@ function startRecording() {
     mediaRecorder = new MediaRecorder(recordStream, options);
   } catch (error) {
     recordingState.textContent = "recorder init failed";
-    setStatus("COULD NOT START RECORDING", false);
+    setStatus("could not start local recording", false);
     return;
   }
 
@@ -204,7 +204,7 @@ function startRecording() {
       recordTicker = null;
     }
     recordingTime.textContent = "00:00";
-    setStatus("CLIP READY", true);
+    setStatus("local clip ready to save", true);
     updateRecordingUi();
     const tracks = mediaRecorder.stream ? mediaRecorder.stream.getTracks() : [];
     tracks.forEach((track) => track.stop());
@@ -214,7 +214,7 @@ function startRecording() {
   recordStartedAt = Date.now();
   updateRecordingClock();
   recordTicker = setInterval(updateRecordingClock, 250);
-  setStatus("RECORDING", true);
+  setStatus("recording local clip", true);
   updateRecordingUi();
 }
 
@@ -239,7 +239,7 @@ function saveRecording() {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  setStatus("CLIP SAVED", true);
+  setStatus("clip saved to local device", true);
 }
 
 function titleCase(value) {
@@ -279,7 +279,7 @@ function syncFullscreenUi() {
 
 streamSource.onload = () => {
   setLiveState(true);
-  setStatus("LIVE", true);
+  setStatus("observans live and stable", true);
   startRenderLoop();
   updateRecordingUi();
 };
@@ -287,7 +287,7 @@ streamSource.onload = () => {
 streamSource.onerror = () => {
   setLiveState(false);
   stopRenderLoop();
-  setStatus("RECONNECTING", false);
+  setStatus("reconnecting to twilight feed", false);
   updateRecordingUi();
   reconnectTimer = setTimeout(connectStream, 1500);
 };
@@ -316,7 +316,7 @@ async function tick() {
     const frameSizeText = metrics.avg_frame_kb > 0 ? `${metrics.avg_frame_kb.toFixed(1)} KB` : "--";
     const liveFpsText = `${metrics.fps_actual.toFixed(1)} / ${metrics.fps_target} fps`;
     const batteryText = battAvailable ? `${metrics.batt}%` : "N/A";
-    const batteryStatus = battAvailable ? titleCase(metrics.batt_status || "unknown") : "unavailable";
+    const batteryStatus = battAvailable ? String(metrics.batt_status || "unknown").toLowerCase() : "unavailable";
 
     document.getElementById("clock").textContent = metrics.time;
     document.getElementById("date").textContent = metrics.date;
@@ -343,7 +343,7 @@ async function tick() {
 
     backendPill.textContent = String(metrics.capture_backend || "--").toUpperCase();
     frameSizePill.textContent = frameSizeText;
-    restartPill.textContent = `RST:${metrics.restarts}`;
+    restartPill.textContent = `RST ${metrics.restarts}`;
 
     setBarFill("cpu-bar-fill", cpuPct);
     setBarFill("ram-bar-fill", ramPct);
@@ -351,15 +351,15 @@ async function tick() {
     setBatteryFill(battAvailable ? metrics.batt : 0);
 
     if (!streamAlive && metrics.clients === 0) {
-      setStatus("STANDBY", null);
+      setStatus("system idle under the evening sky", null);
     } else if (streamAlive && !(mediaRecorder && mediaRecorder.state !== "inactive")) {
-      setStatus(`LIVE ${metrics.fps_actual.toFixed(1)} FPS`, true);
+      setStatus(`live stream · ${metrics.fps_actual.toFixed(1)} fps · age ${frameAgeText}`, true);
     }
 
     updateRecordingUi();
   } catch (error) {
     if (Date.now() - lastMetricsOk > 4000) {
-      setStatus("TELEMETRY OFFLINE", false);
+      setStatus("telemetry unavailable", false);
     }
   }
 }
