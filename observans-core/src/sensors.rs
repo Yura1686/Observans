@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use sysinfo::Components;
 
 const BATTERY_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
+const TEMPERATURE_FALLBACK_REFRESH_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone)]
 pub struct SensorReading {
@@ -24,6 +25,8 @@ pub struct SensorSampler {
     components: Components,
     battery_cache: Option<BatteryReading>,
     last_battery_poll: Option<Instant>,
+    fallback_temp_cache: Option<f32>,
+    last_temp_poll: Option<Instant>,
 }
 
 impl SensorSampler {
@@ -32,11 +35,17 @@ impl SensorSampler {
             components: Components::new_with_refreshed_list(),
             battery_cache: None,
             last_battery_poll: None,
+            fallback_temp_cache: None,
+            last_temp_poll: None,
         }
     }
 
     pub fn sample(&mut self) -> SensorReading {
-        let temp_c = sample_temperature(&mut self.components);
+        let temp_c = sample_temperature(
+            &mut self.components,
+            &mut self.fallback_temp_cache,
+            &mut self.last_temp_poll,
+        );
         self.refresh_battery_if_due();
 
         SensorReading {
@@ -66,9 +75,19 @@ impl SensorSampler {
     }
 }
 
-fn sample_temperature(components: &mut Components) -> Option<f32> {
+fn sample_temperature(
+    components: &mut Components,
+    fallback_cache: &mut Option<f32>,
+    last_poll: &mut Option<Instant>,
+) -> Option<f32> {
     components.refresh(false);
-    pick_component_temperature(components).or_else(platform_temperature_fallback)
+    if let Some(temp) = pick_component_temperature(components) {
+        *fallback_cache = Some(temp);
+        return Some(temp);
+    }
+
+    refresh_temperature_fallback_if_due(fallback_cache, last_poll);
+    *fallback_cache
 }
 
 fn pick_component_temperature(components: &Components) -> Option<f32> {
@@ -81,19 +100,41 @@ fn pick_component_temperature(components: &Components) -> Option<f32> {
 
 fn sanitize_temperature(temp_c: f32) -> Option<f32> {
     if temp_c.is_finite() && (0.0..140.0).contains(&temp_c) {
-        Some((temp_c * 10.0).round() / 10.0)
+        Some(temp_c)
     } else {
         None
     }
 }
 
-#[cfg(target_os = "linux")]
-fn platform_temperature_fallback() -> Option<f32> {
-    read_linux_temperature_root(Path::new("/sys/class/thermal"))
+fn refresh_temperature_fallback_if_due(
+    fallback_cache: &mut Option<f32>,
+    last_poll: &mut Option<Instant>,
+) {
+    let should_refresh = last_poll
+        .map(|instant| instant.elapsed() >= TEMPERATURE_FALLBACK_REFRESH_INTERVAL)
+        .unwrap_or(true);
+
+    if !should_refresh {
+        return;
+    }
+
+    *last_poll = Some(Instant::now());
+    *fallback_cache = read_platform_temperature();
 }
 
-#[cfg(not(target_os = "linux"))]
-fn platform_temperature_fallback() -> Option<f32> {
+#[cfg(target_os = "linux")]
+fn read_platform_temperature() -> Option<f32> {
+    read_linux_hwmon_root(Path::new("/sys/class/hwmon"))
+        .or_else(|| read_linux_temperature_root(Path::new("/sys/class/thermal")))
+}
+
+#[cfg(target_os = "windows")]
+fn read_platform_temperature() -> Option<f32> {
+    read_windows_temperature()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn read_platform_temperature() -> Option<f32> {
     None
 }
 
@@ -116,8 +157,8 @@ fn read_battery() -> Option<BatteryReading> {
 fn read_linux_temperature_root(root: &Path) -> Option<f32> {
     let mut hottest = None;
 
-    for entry in fs::read_dir(root).ok()? {
-        let path = entry.ok()?.path();
+    for entry in fs::read_dir(root).ok()?.flatten() {
+        let path = entry.path();
         let file_name = path.file_name()?.to_str()?;
         if !file_name.starts_with("thermal_zone") {
             continue;
@@ -139,10 +180,62 @@ fn read_linux_temperature_root(root: &Path) -> Option<f32> {
 }
 
 #[cfg(target_os = "linux")]
+fn read_linux_hwmon_root(root: &Path) -> Option<f32> {
+    let mut hottest = None;
+
+    for entry in fs::read_dir(root).ok()?.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        hottest = pick_hottest(
+            hottest,
+            read_linux_hwmon_dir(&path).or_else(|| read_linux_hwmon_dir(&path.join("device"))),
+        );
+    }
+
+    hottest
+}
+
+#[cfg(target_os = "linux")]
+fn read_linux_hwmon_dir(root: &Path) -> Option<f32> {
+    let mut hottest = None;
+
+    for entry in fs::read_dir(root).ok()?.flatten() {
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+
+        if !(file_name.starts_with("temp") && file_name.ends_with("_input")) {
+            continue;
+        }
+
+        let temp = read_trimmed(path)
+            .and_then(|raw| parse_linux_temperature(&raw))
+            .and_then(sanitize_temperature);
+
+        hottest = pick_hottest(hottest, temp);
+    }
+
+    hottest
+}
+
+#[cfg(target_os = "linux")]
 fn parse_linux_temperature(raw: &str) -> Option<f32> {
     let raw = raw.trim().parse::<f32>().ok()?;
     let temp_c = if raw > 200.0 { raw / 1000.0 } else { raw };
     Some(temp_c)
+}
+
+fn pick_hottest(current: Option<f32>, candidate: Option<f32>) -> Option<f32> {
+    match (current, candidate) {
+        (Some(left), Some(right)) => Some(left.max(right)),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -237,6 +330,25 @@ fn read_windows_battery() -> Option<BatteryReading> {
     parse_windows_battery_json(&String::from_utf8_lossy(&output.stdout))
 }
 
+#[cfg(target_os = "windows")]
+fn read_windows_temperature() -> Option<f32> {
+    let output = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "$t = Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction SilentlyContinue | Select-Object -ExpandProperty CurrentTemperature; if ($null -eq $t) { 'null' } else { $t | ConvertTo-Json -Compress }",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    parse_windows_temperature_json(&String::from_utf8_lossy(&output.stdout))
+}
+
 #[cfg_attr(not(any(test, target_os = "windows")), allow(dead_code))]
 fn parse_windows_battery_json(raw: &str) -> Option<BatteryReading> {
     let trimmed = raw.trim().trim_start_matches('\u{feff}');
@@ -269,6 +381,37 @@ fn normalize_windows_battery_status(code: Option<i32>) -> String {
 }
 
 #[cfg_attr(not(any(test, target_os = "windows")), allow(dead_code))]
+fn parse_windows_temperature_json(raw: &str) -> Option<f32> {
+    let trimmed = raw.trim().trim_start_matches('\u{feff}');
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+        return None;
+    }
+
+    let value = serde_json::from_str::<serde_json::Value>(trimmed).ok()?;
+    match value {
+        serde_json::Value::Number(number) => {
+            convert_windows_temperature(number.as_f64()?).and_then(sanitize_temperature)
+        }
+        serde_json::Value::Array(values) => values
+            .iter()
+            .filter_map(|value| value.as_f64())
+            .filter_map(convert_windows_temperature)
+            .filter_map(sanitize_temperature)
+            .max_by(|left, right| left.total_cmp(right)),
+        _ => None,
+    }
+}
+
+#[cfg_attr(not(any(test, target_os = "windows")), allow(dead_code))]
+fn convert_windows_temperature(raw: f64) -> Option<f32> {
+    if raw <= 0.0 {
+        return None;
+    }
+
+    Some((raw as f32 / 10.0) - 273.15)
+}
+
+#[cfg_attr(not(any(test, target_os = "windows")), allow(dead_code))]
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum WindowsBatteryEnvelope {
@@ -297,13 +440,13 @@ fn read_numeric(path: PathBuf) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_windows_battery_status, parse_windows_battery_json, read_trimmed,
-        sanitize_temperature, BatteryReading,
+        normalize_windows_battery_status, parse_windows_battery_json,
+        parse_windows_temperature_json, read_trimmed, sanitize_temperature, BatteryReading,
     };
     #[cfg(target_os = "linux")]
     use super::{
         normalize_linux_battery_status, parse_linux_temperature, read_linux_battery_root,
-        read_linux_temperature_root,
+        read_linux_hwmon_root, read_linux_temperature_root,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -373,6 +516,23 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn reads_hottest_linux_hwmon_temperature() {
+        let root = temp_dir("hwmon-root");
+        let hwmon0 = root.join("hwmon0");
+        let hwmon1 = root.join("hwmon1");
+        fs::create_dir_all(&hwmon0).unwrap();
+        fs::create_dir_all(&hwmon1).unwrap();
+        fs::write(hwmon0.join("temp1_input"), "44123").unwrap();
+        fs::write(hwmon1.join("temp2_input"), "51250").unwrap();
+
+        let hottest = read_linux_hwmon_root(&root).unwrap();
+        assert!((hottest - 51.3).abs() < 0.11);
+
+        cleanup(&root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn normalizes_linux_battery_status_strings() {
         assert_eq!(normalize_linux_battery_status("Charging"), "charging");
         assert_eq!(normalize_linux_battery_status("Not charging"), "plugged");
@@ -425,11 +585,29 @@ mod tests {
     }
 
     #[test]
+    fn parses_windows_temperature_scalar_payload() {
+        let temp = parse_windows_temperature_json("3152").unwrap();
+        assert!((temp - 42.05).abs() < 0.01);
+    }
+
+    #[test]
+    fn parses_windows_temperature_array_payload() {
+        let temp = parse_windows_temperature_json("[3002,3125,0]").unwrap();
+        assert!((temp - 39.35).abs() < 0.01);
+    }
+
+    #[test]
+    fn ignores_missing_windows_temperature_payload() {
+        assert_eq!(parse_windows_temperature_json("null"), None);
+        assert_eq!(parse_windows_temperature_json(""), None);
+    }
+
+    #[test]
     fn discards_invalid_temperatures() {
         assert_eq!(sanitize_temperature(f32::NAN), None);
         assert_eq!(sanitize_temperature(-4.0), None);
         assert_eq!(sanitize_temperature(180.0), None);
-        assert_eq!(sanitize_temperature(63.27), Some(63.3));
+        assert_eq!(sanitize_temperature(63.27), Some(63.27));
     }
 
     #[test]

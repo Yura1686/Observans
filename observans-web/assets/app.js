@@ -29,10 +29,6 @@ let recordedMimeType = "video/webm";
 let recordStartedAt = 0;
 let recordTicker = null;
 
-function syncViewportHeight() {
-  document.documentElement.style.setProperty("--app-height", `${window.innerHeight}px`);
-}
-
 function withTs(path) {
   const query = new URLSearchParams(params);
   query.set("t", Date.now().toString());
@@ -64,7 +60,7 @@ function connectStream() {
   }
 
   setLiveState(false);
-  setStatus("connecting to twilight feed", false);
+  setStatus("connecting stream", false);
   streamSource.src = withTs("/stream");
   updateRecordingUi();
 }
@@ -104,7 +100,8 @@ function setBarFill(id, percent) {
 
 function setBatteryFill(percent) {
   const fill = document.getElementById("battery-fill");
-  fill.style.height = `${clamp(percent, 0, 100)}%`;
+  if (!fill) return;
+  fill.style.width = `${clamp(percent, 0, 100)}%`;
 }
 
 function formatDuration(ms) {
@@ -166,13 +163,13 @@ function updateRecordingUi() {
 function startRecording() {
   if (!window.MediaRecorder || !stage.captureStream || !stageCtx) {
     recordingState.textContent = "recording unsupported";
-    setStatus("recording unsupported in this browser", false);
+    setStatus("recording unsupported", false);
     return;
   }
 
   if (!streamAlive || stage.width === 0 || stage.height === 0) {
     recordingState.textContent = "waiting for live stream";
-    setStatus("wait for the live stream before recording", false);
+    setStatus("wait for live stream", false);
     return;
   }
 
@@ -189,7 +186,7 @@ function startRecording() {
     mediaRecorder = new MediaRecorder(recordStream, options);
   } catch (error) {
     recordingState.textContent = "recorder init failed";
-    setStatus("could not start local recording", false);
+    setStatus("could not start recording", false);
     return;
   }
 
@@ -208,7 +205,7 @@ function startRecording() {
       recordTicker = null;
     }
     recordingTime.textContent = "00:00";
-    setStatus("local clip ready to save", true);
+    setStatus("clip ready", true);
     updateRecordingUi();
     const tracks = mediaRecorder.stream ? mediaRecorder.stream.getTracks() : [];
     tracks.forEach((track) => track.stop());
@@ -218,7 +215,7 @@ function startRecording() {
   recordStartedAt = Date.now();
   updateRecordingClock();
   recordTicker = setInterval(updateRecordingClock, 250);
-  setStatus("recording local clip", true);
+  setStatus("recording", true);
   updateRecordingUi();
 }
 
@@ -243,16 +240,7 @@ function saveRecording() {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  setStatus("clip saved to local device", true);
-}
-
-function titleCase(value) {
-  return String(value || "--")
-    .replace(/[_-]+/g, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  setStatus("clip saved", true);
 }
 
 function formatTemperature(temp) {
@@ -264,7 +252,7 @@ function thermalState(temp) {
   if (temp < 0) return "sensor unavailable";
   if (temp >= 80) return "thermal load high";
   if (temp >= 65) return "thermal load elevated";
-  return "thermal envelope stable";
+  return "thermal stable";
 }
 
 function toggleFullscreen() {
@@ -279,12 +267,11 @@ function syncFullscreenUi() {
   const active = document.fullscreenElement === streamFrame;
   document.body.classList.toggle("viewer-fullscreen", active);
   fullscreenBtn.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
-  syncViewportHeight();
 }
 
 streamSource.onload = () => {
   setLiveState(true);
-  setStatus("observans live and stable", true);
+  setStatus("stream live", true);
   startRenderLoop();
   updateRecordingUi();
 };
@@ -292,7 +279,7 @@ streamSource.onload = () => {
 streamSource.onerror = () => {
   setLiveState(false);
   stopRenderLoop();
-  setStatus("reconnecting to twilight feed", false);
+  setStatus("reconnecting stream", false);
   updateRecordingUi();
   reconnectTimer = setTimeout(connectStream, 1500);
 };
@@ -302,7 +289,6 @@ stopBtn.addEventListener("click", stopRecording);
 saveBtn.addEventListener("click", saveRecording);
 fullscreenBtn.addEventListener("click", toggleFullscreen);
 document.addEventListener("fullscreenchange", syncFullscreenUi);
-window.addEventListener("resize", syncViewportHeight);
 
 async function tick() {
   try {
@@ -315,14 +301,12 @@ async function tick() {
 
     const cpuPct = clamp(metrics.cpu || 0, 0, 100);
     const ramPct = clamp(metrics.ram_pct || 0, 0, 100);
+    const battPct = clamp(metrics.batt || 0, 0, 100);
     const tempAvailable = metrics.temp >= 0;
     const battAvailable = metrics.batt >= 0;
     const tempPct = tempAvailable ? clamp(metrics.temp, 0, 100) : 0;
     const frameAgeText = metrics.frame_age_ms >= 0 ? `${metrics.frame_age_ms} ms` : "--";
     const frameSizeText = metrics.avg_frame_kb > 0 ? `${metrics.avg_frame_kb.toFixed(1)} KB` : "--";
-    const liveFpsText = `${metrics.fps_actual.toFixed(1)} / ${metrics.fps_target} fps`;
-    const batteryText = battAvailable ? `${metrics.batt}%` : "N/A";
-    const batteryStatus = battAvailable ? String(metrics.batt_status || "unknown").toLowerCase() : "unavailable";
 
     document.getElementById("clock").textContent = metrics.time;
     document.getElementById("date").textContent = metrics.date;
@@ -331,21 +315,20 @@ async function tick() {
     document.getElementById("ram-sub").textContent = `${metrics.ram_used_mb} / ${metrics.ram_total_mb} MB`;
     document.getElementById("temp").textContent = formatTemperature(metrics.temp);
     document.getElementById("temp-sub").textContent = thermalState(metrics.temp);
-    document.getElementById("batt").textContent = batteryText;
-    document.getElementById("batt-sub").textContent = batteryStatus;
+    document.getElementById("batt").textContent = battAvailable ? `${battPct}%` : "N/A";
+    document.getElementById("batt-sub").textContent = battAvailable ? String(metrics.batt_status || "unknown").toLowerCase() : "unavailable";
     document.getElementById("host").textContent = metrics.hostname;
-    document.getElementById("host-sub").textContent = `${metrics.platform_name} / ${metrics.capture_backend}`;
     document.getElementById("clients").textContent = metrics.clients;
+    document.getElementById("host-sub").textContent = `${metrics.platform_name} / ${metrics.capture_backend}`;
     document.getElementById("uptime").textContent = metrics.uptime;
     document.getElementById("res").textContent = metrics.res;
-    document.getElementById("fps").textContent = liveFpsText;
+    document.getElementById("fps").textContent = `${metrics.fps_actual.toFixed(1)} / ${metrics.fps_target} fps`;
     document.getElementById("frame-age").textContent = frameAgeText;
+    document.getElementById("video-res").textContent = metrics.res;
     document.getElementById("stream-input").textContent = metrics.stream_input;
     document.getElementById("stream-pipeline").textContent = metrics.stream_pipeline;
-    document.getElementById("stream-meta").textContent = `Age ${frameAgeText} • Drops ${metrics.queue_drops} • Clients ${metrics.clients}`;
-    document.getElementById("video-res").textContent = metrics.res;
-    document.getElementById("video-meta-line").textContent =
-      `${metrics.capture_backend} • ${metrics.stream_input} • ${frameSizeText} • RST ${metrics.restarts}`;
+    document.getElementById("stream-meta").textContent = `age ${frameAgeText} • drops ${metrics.queue_drops} • restarts ${metrics.restarts}`;
+    document.getElementById("video-meta-line").textContent = `${metrics.capture_backend} • ${frameSizeText} • ${metrics.stream_input}`;
 
     backendPill.textContent = String(metrics.capture_backend || "--").toUpperCase();
     frameSizePill.textContent = frameSizeText;
@@ -354,12 +337,12 @@ async function tick() {
     setBarFill("cpu-bar-fill", cpuPct);
     setBarFill("ram-bar-fill", ramPct);
     setBarFill("temp-bar-fill", tempPct);
-    setBatteryFill(battAvailable ? metrics.batt : 0);
+    setBatteryFill(battAvailable ? battPct : 0);
 
     if (!streamAlive && metrics.clients === 0) {
-      setStatus("system idle under the evening sky", null);
+      setStatus("system idle");
     } else if (streamAlive && !(mediaRecorder && mediaRecorder.state !== "inactive")) {
-      setStatus(`live stream · ${metrics.fps_actual.toFixed(1)} fps · age ${frameAgeText}`, true);
+      setStatus(`live ${metrics.fps_actual.toFixed(1)} fps`, true);
     }
 
     updateRecordingUi();
@@ -399,6 +382,5 @@ document.addEventListener("visibilitychange", () => {
 });
 
 connectStream();
-syncViewportHeight();
 setInterval(tick, 1000);
 tick();
