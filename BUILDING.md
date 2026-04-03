@@ -1,21 +1,40 @@
 # Building Observans Releases
 
-Observans publishes Linux and Windows releases only.
+This document covers release packaging for Observans. The project currently
+ships Linux and Windows `x86_64` bundles only.
 
-Observans has two release packaging entrypoints:
+## Release Targets
 
-- `tools/build_release_linux.sh`
-- `tools/build_release_windows.ps1`
+| Target | Rust target | Archive |
+| --- | --- | --- |
+| Linux x64 | `x86_64-unknown-linux-musl` | `Observans-linux-x64.tar.gz` |
+| Windows x64 | `x86_64-pc-windows-msvc` | `Observans-windows-x64.zip` |
 
-## Official release strategy
+Both bundles include:
 
-- Linux release: statically-linked-as-practical musl binary inside `Observans-linux-x64.tar.gz`
-- Windows release: `observans.exe` built for `x86_64-pc-windows-msvc` with static CRT
-- Both bundles include `_observans_runtime/ffmpeg/bin/...`
+- the Observans entrypoint for that platform
+- bundled FFmpeg under `_observans_runtime/ffmpeg/bin`
+- a release-facing `README.md`
+- `_observans_runtime/build_meta.json`
 
-## Linux
+## Packaging Entrypoints
 
-Prerequisites:
+Use the dedicated release scripts in `tools/`:
+
+```bash
+bash tools/build_release_linux.sh
+```
+
+```powershell
+./tools/build_release_windows.ps1
+```
+
+The release matrix and FFmpeg source definitions are maintained in
+`tools/release_manifest.json`.
+
+## Linux Build
+
+### Prerequisites
 
 - Rust toolchain
 - `python3`
@@ -24,40 +43,77 @@ Prerequisites:
 - `curl` or `wget`
 - musl tooling for `x86_64-unknown-linux-musl`
 
-Build:
+### Output
 
-```bash
-bash tools/build_release_linux.sh
-```
-
-Outputs:
+Running the Linux packager produces:
 
 - `dist/Observans-linux-x64.tar.gz`
 - `dist/Observans-linux-x64.tar.gz.sha256`
 - `dist/install.sh`
 - `dist/uninstall.sh`
-- `dist/install.sh` is stamped with the release repository slug
-- the archive contains `Observans.sh`, `_observans_runtime/bin/observans`, `_observans_runtime/ffmpeg`, `README.md`, and `build_meta.json`
 
-## Windows
+Archive structure:
 
-Run from PowerShell on Windows:
+- `Observans-linux-x64/Observans.sh`
+- `Observans-linux-x64/_observans_runtime/bin/observans`
+- `Observans-linux-x64/_observans_runtime/ffmpeg/bin/ffmpeg`
+- `Observans-linux-x64/README.md`
+- `Observans-linux-x64/_observans_runtime/build_meta.json`
+
+Notes:
+
+- `Observans.sh` is the user-facing launcher.
+- The actual ELF binary lives under `_observans_runtime/bin/observans`.
+- `dist/install.sh` is stamped with the release repository slug when packaging.
+
+## Windows Build
+
+Run the Windows packager from PowerShell on Windows:
 
 ```powershell
 ./tools/build_release_windows.ps1
 ```
 
-Outputs:
+### Output
 
 - `dist/Observans-windows-x64.zip`
 - `dist/Observans-windows-x64.zip.sha256`
-- the archive contains `observans.exe`, `_observans_runtime`, `README.md`, and `build_meta.json`
 
-## Notes
+Archive structure:
 
-- Bundled FFmpeg is resolved automatically at runtime when present next to the executable.
-- Linux bundles expose only `Observans.sh` at the top level; the actual ELF binary lives under `_observans_runtime/bin/observans`.
-- `OBSERVANS_FFMPEG` still overrides bundled/runtime lookup.
-- Official release builds are produced in GitHub Actions via `.github/workflows/release.yml`.
-- Pushes to `main` refresh one rolling pre-release in GitHub Releases.
-- That rolling release publishes only the 2 runnable archives; `.sha256`, `install.sh`, and `uninstall.sh` stay local tooling outputs.
+- `Observans-windows-x64/observans.exe`
+- `Observans-windows-x64/_observans_runtime/ffmpeg/bin/ffmpeg.exe`
+- `Observans-windows-x64/README.md`
+- `Observans-windows-x64/_observans_runtime/build_meta.json`
+
+## Bundled FFmpeg
+
+Release scripts download FFmpeg from the source defined in
+`tools/release_manifest.json`, verify its SHA-256 checksum, and copy the
+runtime binaries into the bundle.
+
+At runtime, Observans still honors the override order documented in the main
+README:
+
+1. `OBSERVANS_FFMPEG`
+2. bundled runtime FFmpeg
+3. `ffmpeg` from `PATH`
+
+## CI Release Flow
+
+GitHub Actions builds releases through `.github/workflows/release.yml`.
+
+The workflow:
+
+- builds Linux and Windows bundles
+- smoke-tests both archives
+- refreshes the `rolling-main` tag
+- publishes one rolling pre-release from the latest successful `main` build
+
+The rolling GitHub Release publishes only the two runnable archives:
+
+- `Observans-linux-x64.tar.gz`
+- `Observans-windows-x64.zip`
+
+Checksum files and Linux installer helper scripts are generated locally during
+packaging, but are not uploaded as release assets.
