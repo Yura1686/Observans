@@ -266,17 +266,48 @@ fn ffmpeg_args(config: &Config, params: &ResolvedCaptureParams, hint: &ProfileHi
         args.extend(["-video_size".into(), format!("{}x{}", params.width, params.height)]);
     }
 
-    // Input format (pixel/codec format from probe)
+    // Input format (pixel/codec format from probe).
+    //
+    // v4l2  → -input_format <fmt>          (kernel V4L2 ioctl-level selection)
+    // dshow → -pixel_format <fmt>  for raw  (bgr24, yuyv422, …)
+    //         -vcodec <fmt>        for compressed  (mjpeg, h264)
+    //
+    // `-input_format` is a v4l2-specific option; passing it to dshow causes
+    // "Unrecognized option 'input_format'" and FFmpeg refuses to start.
     let include_fmt = params.input_format.is_some()
         && !matches!(hint, ProfileHint::NoInputFormat | ProfileHint::DriverDefaults);
     if include_fmt {
         if let Some(fmt) = &params.input_format {
-            args.extend(["-input_format".into(), fmt.clone()]);
+            if is_dshow {
+                // Compressed codec (mjpeg / h264) → -vcodec
+                // Raw pixel format (yuyv422 / bgr24 / …) → -pixel_format
+                let is_compressed = matches!(fmt.as_str(), "mjpeg" | "h264");
+                if is_compressed {
+                    args.extend(["-vcodec".into(), fmt.clone()]);
+                } else {
+                    args.extend(["-pixel_format".into(), fmt.clone()]);
+                }
+            } else {
+                // v4l2
+                args.extend(["-input_format".into(), fmt.clone()]);
+            }
         }
     }
 
-    // Input device
-    args.extend(["-i".into(), params.device.clone()]);
+    // Input device.
+    // dshow requires the "video=<name>" prefix in the -i argument.
+    // The device stored in params may or may not have it already depending
+    // on whether the user passed it via --device or it was auto-resolved.
+    let ffmpeg_input = if is_dshow {
+        if params.device.starts_with("video=") {
+            params.device.clone()
+        } else {
+            format!("video={}", params.device)
+        }
+    } else {
+        params.device.clone()
+    };
+    args.extend(["-i".into(), ffmpeg_input]);
 
     // Audio suppression + output
     args.extend(["-an".into(), "-flush_packets".into(), "1".into()]);
