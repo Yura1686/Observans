@@ -1,4 +1,4 @@
-use crate::camera_inventory::first_camera_device;
+use crate::camera_inventory::camera_device_candidates;
 use crate::config::Config;
 use crate::metrics::SharedMetrics;
 use crate::probe::{probe_dshow, probe_v4l2, resolve_params_from_probe, ResolvedCaptureParams};
@@ -94,46 +94,62 @@ fn run_capture_session(
     metrics: &SharedMetrics,
     gate: &Arc<ClientGate>,
 ) -> CaptureEnd {
-    let device = match resolve_device(config) {
+    let devices = match resolve_device_candidates(config) {
         Ok(d) => d,
         Err(e) => return CaptureEnd::Error(capture_failure(0, e)),
     };
     let ffmpeg = ffmpeg_binary();
-    let params = probe_camera(config, &device, &ffmpeg);
-    metrics.set_stream_input(params.device.clone());
+    let mut device_failures = Vec::new();
 
-    let attempts = build_capture_attempts(config, &params);
-    let mut startup_failures = Vec::new();
+    for device in devices {
+        let params = probe_camera(config, &device, &ffmpeg);
+        metrics.set_stream_input(params.device.clone());
 
-    for attempt in attempts {
-        let suffix = if attempt.label == "primary" {
-            String::new()
-        } else {
-            format!(" ({})", attempt.label)
-        };
-        info!(
-            "starting capture: {} on {}{}",
-            config.capture_format(),
-            params.device,
-            suffix,
-        );
+        let attempts = build_capture_attempts(config, &params);
+        let mut startup_failures = Vec::new();
 
-        match run_capture_attempt(&ffmpeg, config, tx, metrics, &attempt, gate) {
-            CaptureEnd::Idle => return CaptureEnd::Idle,
-            CaptureEnd::Error(err) if err.frames_sent == 0 => {
-                startup_failures.push(format!("{}: {}", attempt.label, err.error));
+        for attempt in attempts {
+            let suffix = if attempt.label == "primary" {
+                String::new()
+            } else {
+                format!(" ({})", attempt.label)
+            };
+            info!(
+                "starting capture: {} on {}{}",
+                config.capture_format(),
+                params.device,
+                suffix,
+            );
+
+            match run_capture_attempt(&ffmpeg, config, tx, metrics, &attempt, gate) {
+                CaptureEnd::Idle => return CaptureEnd::Idle,
+                CaptureEnd::Error(err) if err.frames_sent == 0 => {
+                    startup_failures.push(format!("{}: {}", attempt.label, err.error));
+                }
+                end => return end,
             }
-            end => return end,
         }
+
+        device_failures.push(format!(
+            "{}: {}",
+            params.device,
+            startup_failures.join(" | ")
+        ));
     }
+
+    let scope = if config.device == "auto" {
+        "auto device candidates"
+    } else {
+        "configured device"
+    };
 
     CaptureEnd::Error(capture_failure(
         0,
         anyhow!(
             "all capture attempts failed for {} ({}): {}",
-            params.device,
+            scope,
             config.capture_format(),
-            startup_failures.join(" | ")
+            device_failures.join(" || ")
         ),
     ))
 }
@@ -509,13 +525,15 @@ fn run_capture_attempt(
 // Device resolution
 // ---------------------------------------------------------------------------
 
-fn resolve_device(config: &Config) -> Result<String> {
+fn resolve_device_candidates(config: &Config) -> Result<Vec<String>> {
     if config.device != "auto" {
-        return Ok(config.device.clone());
+        return Ok(vec![config.device.clone()]);
     }
+
     let ffmpeg_path = ffmpeg_binary();
-    if let Some(dev) = first_camera_device(Some(ffmpeg_path.as_path())) {
-        return Ok(dev);
+    let devices = camera_device_candidates(Some(ffmpeg_path.as_path()));
+    if !devices.is_empty() {
+        return Ok(devices);
     }
 
     let fallback = config.platform_default_device().to_string();
@@ -523,7 +541,7 @@ fn resolve_device(config: &Config) -> Result<String> {
         "camera auto-resolve returned no devices; falling back to {}",
         fallback
     );
-    Ok(fallback)
+    Ok(vec![fallback])
 }
 
 fn ffmpeg_binary() -> PathBuf {

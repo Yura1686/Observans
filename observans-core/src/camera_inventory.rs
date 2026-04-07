@@ -25,9 +25,14 @@ pub fn enumerate_cameras(ffmpeg_path: Option<&Path>) -> Result<Vec<CameraInfo>> 
 }
 
 pub fn first_camera_device(ffmpeg_path: Option<&Path>) -> Option<String> {
+    camera_device_candidates(ffmpeg_path).into_iter().next()
+}
+
+pub fn camera_device_candidates(ffmpeg_path: Option<&Path>) -> Vec<String> {
     enumerate_cameras(ffmpeg_path)
         .ok()
-        .and_then(|cameras| cameras.into_iter().next().map(|camera| camera.device))
+        .map(|cameras| cameras.into_iter().map(|camera| camera.device).collect())
+        .unwrap_or_default()
 }
 
 fn dedup_cameras(cameras: Vec<CameraInfo>) -> Vec<CameraInfo> {
@@ -182,9 +187,16 @@ fn parse_dshow_devices(text: &str) -> Vec<CameraInfo> {
 
         if lower.contains("alternative name") {
             if let Some(name) = extract_quoted(line) {
-                if let Some(camera) = cameras.last_mut() {
-                    // FFmpeg accepts the stable alternative device name in `video=<name>`.
-                    camera.device = format!("video={name}");
+                if let Some(index) = cameras.len().checked_sub(1) {
+                    let camera_name = cameras[index].name.clone();
+                    cameras[index].details =
+                        format!("windows camera (alternative device: {name})");
+                    cameras.push(CameraInfo {
+                        device: format!("video={name}"),
+                        name: camera_name,
+                        backend: "dshow".to_string(),
+                        details: "windows camera alternative device".to_string(),
+                    });
                 }
             }
             continue;
@@ -309,7 +321,7 @@ fn is_capture_device(device: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{first_camera_device, parse_ffmpeg_device_list, parse_v4l2_devices};
+    use super::{camera_device_candidates, parse_ffmpeg_device_list, parse_v4l2_devices};
     use std::path::Path;
 
     #[test]
@@ -334,9 +346,10 @@ HD Pro Webcam C920 (usb-0000:00:14.0-8):\n\
 [dshow @ 000001]  Alternative name \"@device_pnp_...\"\n";
 
         let cameras = parse_ffmpeg_device_list("windows", text);
-        assert_eq!(cameras.len(), 1);
-        assert_eq!(cameras[0].device, "video=@device_pnp_...");
+        assert_eq!(cameras.len(), 2);
+        assert_eq!(cameras[0].device, "video=Integrated Camera");
         assert_eq!(cameras[0].name, "Integrated Camera");
+        assert_eq!(cameras[1].device, "video=@device_pnp_...");
     }
 
     #[test]
@@ -352,10 +365,7 @@ HD Pro Webcam C920 (usb-0000:00:14.0-8):\n\
     }
 
     #[test]
-    fn first_camera_device_returns_none_when_probe_fails() {
-        assert_eq!(
-            first_camera_device(Some(Path::new("/definitely/missing/ffmpeg"))),
-            None
-        );
+    fn camera_device_candidates_return_empty_when_inventory_fails() {
+        assert!(camera_device_candidates(Some(Path::new("/definitely/missing/ffmpeg"))).is_empty());
     }
 }

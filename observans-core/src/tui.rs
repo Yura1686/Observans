@@ -14,7 +14,9 @@ use crossterm::terminal::{
 };
 use crossterm::{execute, queue};
 use std::io::{self, IsTerminal, Write};
-use std::net::{IpAddr, UdpSocket};
+use std::net::IpAddr;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
@@ -441,23 +443,62 @@ fn dashboard_metrics(metrics: &MetricsSnapshot, warn_count: u64, error_count: u6
 }
 
 fn stream_urls(config: &Config) -> Vec<String> {
-    let mut urls = vec![format!("http://127.0.0.1:{}/", config.port)];
+    render_stream_urls(config.port, tailscale_ip())
+}
 
-    if let Some(ip) = primary_local_ip() {
-        urls.push(format!("http://{}:{}/", ip, config.port));
+fn render_stream_urls(port: u16, tailscale_ip: Option<IpAddr>) -> Vec<String> {
+    let mut urls = vec![format!("http://127.0.0.1:{port}/")];
+
+    if let Some(ip) = tailscale_ip {
+        urls.push(format!("http://{ip}:{port}/"));
     }
 
-    urls.push(format!(
-        "stream endpoint: http://localhost:{}/stream",
-        config.port
-    ));
     urls
 }
 
-fn primary_local_ip() -> Option<IpAddr> {
-    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
-    Some(socket.local_addr().ok()?.ip())
+fn tailscale_ip() -> Option<IpAddr> {
+    for command in tailscale_command_candidates() {
+        if let Some(ip) = tailscale_ip_from_command(&command) {
+            return Some(ip);
+        }
+    }
+
+    None
+}
+
+fn tailscale_command_candidates() -> Vec<PathBuf> {
+    let candidates = vec![PathBuf::from("tailscale")];
+
+    #[cfg(windows)]
+    {
+        let mut candidates = candidates;
+        for env_name in ["ProgramFiles", "ProgramFiles(x86)"] {
+            if let Some(base) = std::env::var_os(env_name) {
+                candidates.push(PathBuf::from(base).join("Tailscale").join("tailscale.exe"));
+            }
+        }
+
+        return candidates;
+    }
+
+    #[cfg(not(windows))]
+    candidates
+}
+
+fn tailscale_ip_from_command(command: &Path) -> Option<IpAddr> {
+    let output = Command::new(command).args(["ip", "-4"]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    parse_tailscale_ip_output(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_tailscale_ip_output(text: &str) -> Option<IpAddr> {
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .and_then(|line| line.parse().ok())
 }
 
 fn push_banner(lines: &mut Vec<StyledLine>, width: usize, title: &str) {
@@ -674,7 +715,8 @@ impl Drop for TerminalGuard {
 
 #[cfg(test)]
 mod tests {
-    use super::{center, fit, framed, pad_to_width};
+    use super::{center, fit, framed, pad_to_width, parse_tailscale_ip_output, render_stream_urls};
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn fit_truncates_without_wrapping() {
@@ -697,5 +739,26 @@ mod tests {
         assert_eq!(line.chars().count(), 22);
         assert!(line.starts_with("| "));
         assert!(line.ends_with(" |"));
+    }
+
+    #[test]
+    fn stream_urls_keep_loopback_and_tailscale_only() {
+        let urls = render_stream_urls(
+            8080,
+            Some(IpAddr::V4(Ipv4Addr::new(100, 64, 12, 34))),
+        );
+
+        assert_eq!(
+            urls,
+            vec!["http://127.0.0.1:8080/", "http://100.64.12.34:8080/"]
+        );
+    }
+
+    #[test]
+    fn parses_first_tailscale_ipv4_from_cli_output() {
+        let output = "100.64.12.34\n";
+        let ip = parse_tailscale_ip_output(output);
+
+        assert_eq!(ip, Some(IpAddr::V4(Ipv4Addr::new(100, 64, 12, 34))));
     }
 }

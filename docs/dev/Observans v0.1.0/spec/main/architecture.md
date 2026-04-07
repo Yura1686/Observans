@@ -92,7 +92,7 @@ Probe:
 Capture не живе в async runtime. Він працює в окремому OS thread:
 
 - чекає на `gate.wait_for_clients()`
-- робить `resolve_device()`
+- робить `resolve_device_candidates()`
 - запускає probe
 - формує пріоритетний список FFmpeg attempts
 - читає stdout FFmpeg
@@ -100,6 +100,8 @@ Capture не живе в async runtime. Він працює в окремому 
 - шле кадри в broadcast channel
 
 Якщо клієнти зникають, child-process убивається й обов'язково `wait()`-иться, щоб камера реально звільнилася.
+
+У `auto` режимі supervisor тепер може пройти кілька кандидатів камери, якщо перший Windows/Linux device id не зміг дати жодного кадру на старті.
 
 ### 4. Web layer
 

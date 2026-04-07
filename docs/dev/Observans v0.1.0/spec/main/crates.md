@@ -135,7 +135,8 @@ Linux:
 Windows:
 
 - читає DirectShow inventory із FFmpeg
-- вміє підхопити `Alternative name`
+- зберігає friendly device name як основний auto-device
+- `Alternative name` лишає як запасний candidate
 - fallback на `ffmpeg -sources dshow`
 
 ### `observans-core/src/probe.rs`
@@ -175,6 +176,7 @@ Windows:
 - stdout читається ще одним thread через `mpsc`
 - при відсутності клієнтів child-process убивається
 - після kill викликається `wait()` для реального release камери
+- у `auto` режимі може пройти кілька device candidates, якщо перший не стартував
 - Windows не отримує `-fflags nobuffer` / `-flags low_delay`
 
 ### `observans-core/src/metrics.rs`

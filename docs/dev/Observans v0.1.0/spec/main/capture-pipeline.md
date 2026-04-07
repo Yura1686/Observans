@@ -36,10 +36,10 @@ stdout bytes------> JpegStreamParser -> FrameSender
 
 ## 1. Device resolution
 
-`resolve_device(config)` працює так:
+`resolve_device_candidates(config)` працює так:
 
 - якщо `config.device != "auto"` -> використовує явний device
-- інакше пробує `first_camera_device(...)`
+- інакше бере впорядкований список device candidates із inventory
 - якщо inventory нічого не повернув -> бере `platform_default_device()`
 
 Поточний fallback:
@@ -48,6 +48,12 @@ stdout bytes------> JpegStreamParser -> FrameSender
 - Windows--> `video=Integrated Camera`
 
 Це означає, що Windows більше не валиться одразу при `auto`, якщо inventory не спрацював.
+
+### Windows auto-selection
+
+На Windows inventory тепер віддає пріоритет **дружній назві камери** (`video=Integrated Camera` тощо), а `Alternative name` з FFmpeg лишає як запасний candidate. Це важливо, бо на частині машин friendly name працює стабільніше за PnP-style alias, і саме через це раніше доводилося вручну передавати `--device "<camera name>"`.
+
+У `auto` режимі capture supervisor може пройти кілька кандидатів поспіль, якщо попередній device id не стартував без жодного кадру.
 
 ## 2. Probe layer
 
