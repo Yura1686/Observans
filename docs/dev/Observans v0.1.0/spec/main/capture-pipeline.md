@@ -177,6 +177,8 @@ Builder враховує backend.
 
 Якщо receiver відстає, web layer бачить `RecvError::Lagged(skipped)` і додає `queue_drops`.
 
+Для LAN listener-ів web layer тепер ще й слухає shared network policy. Якщо оператор вимкнув LAN у TUI, активний LAN MJPEG stream обривається одразу, тому capture може швидше повернутися в idle, коли це був останній viewer.
+
 ## 8. Idle stop і release camera
 
 Головний loop attempt'а перевіряє наявність клієнтів двома способами:
@@ -192,6 +194,8 @@ Builder враховує backend.
 4. `child.wait()`
 
 Саме `wait()` тут критичний: без нього процес може лишитися zombie, а камера - заблокованою.
+
+Коли `LAN -> OFF`, client count для LAN viewer-ів спадає не після випадкового TCP timeout, а після керованого закриття stream з web layer.
 
 ## 9. Restart/backoff
 

@@ -258,7 +258,10 @@ fn battery_candidate_dirs(root: &Path) -> Vec<PathBuf> {
                 continue;
             }
 
-            let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+            let file_name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
             let type_name = read_trimmed(path.join("type")).unwrap_or_default();
             if file_name.starts_with("BAT") || type_name.eq_ignore_ascii_case("battery") {
                 candidates.push(path);
@@ -439,14 +442,14 @@ fn read_numeric(path: PathBuf) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        normalize_windows_battery_status, parse_windows_battery_json,
-        parse_windows_temperature_json, read_trimmed, sanitize_temperature, BatteryReading,
-    };
     #[cfg(target_os = "linux")]
     use super::{
         normalize_linux_battery_status, parse_linux_temperature, read_linux_battery_root,
         read_linux_hwmon_root, read_linux_temperature_root,
+    };
+    use super::{
+        normalize_windows_battery_status, parse_windows_battery_json,
+        parse_windows_temperature_json, read_trimmed, sanitize_temperature, BatteryReading,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -547,10 +550,9 @@ mod tests {
 
     #[test]
     fn parses_windows_battery_json_payload() {
-        let reading = parse_windows_battery_json(
-            r#"{"EstimatedChargeRemaining":73,"BatteryStatus":6}"#,
-        )
-        .unwrap();
+        let reading =
+            parse_windows_battery_json(r#"{"EstimatedChargeRemaining":73,"BatteryStatus":6}"#)
+                .unwrap();
         assert_eq!(
             reading,
             BatteryReading {
@@ -562,10 +564,9 @@ mod tests {
 
     #[test]
     fn parses_windows_battery_json_array_payload() {
-        let reading = parse_windows_battery_json(
-            r#"[{"EstimatedChargeRemaining":92,"BatteryStatus":3}]"#,
-        )
-        .unwrap();
+        let reading =
+            parse_windows_battery_json(r#"[{"EstimatedChargeRemaining":92,"BatteryStatus":3}]"#)
+                .unwrap();
         assert_eq!(reading.percent, 92);
         assert_eq!(reading.status, "full");
     }

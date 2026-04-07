@@ -189,8 +189,7 @@ fn parse_dshow_devices(text: &str) -> Vec<CameraInfo> {
             if let Some(name) = extract_quoted(line) {
                 if let Some(index) = cameras.len().checked_sub(1) {
                     let camera_name = cameras[index].name.clone();
-                    cameras[index].details =
-                        format!("windows camera (alternative device: {name})");
+                    cameras[index].details = format!("windows camera (alternative device: {name})");
                     cameras.push(CameraInfo {
                         device: format!("video={name}"),
                         name: camera_name,

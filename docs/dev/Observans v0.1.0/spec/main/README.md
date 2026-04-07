@@ -11,12 +11,13 @@
 Основні можливості поточного стану:
 
 - startup camera picker у терміналі
-- live TUI dashboard з телеметрією та логами
+- live TUI dashboard з телеметрією, логами і runtime LAN toggle
 - on-demand capture через `ClientGate`
 - MJPEG streaming через `/stream`
 - browser UI з fullscreen, локальним записом і live-метриками
 - Linux (`v4l2`) і Windows (`dshow`) backend через FFmpeg
 - probe-логіка для підбору кращого формату, роздільності й FPS
+- secure-by-default network model: `127.0.0.1` завжди, Tailscale best-effort, LAN вимкнений за default
 - rolling release pipeline для Linux і Windows
 
 ## Навігація
@@ -42,9 +43,9 @@
 
 1. `main()` читає CLI й виконує bootstrap вибору камери.
 2. Якщо термінал інтерактивний, запускається TUI dashboard.
-3. Web server стартує одразу, але capture-thread чекає на глядача.
+3. Web server стартує одразу, але за default слухає тільки `127.0.0.1` і Tailscale IP, якщо він доступний.
 4. Перший клієнт на `/stream` збільшує `ClientGate` і будить capture.
 5. Capture робить probe, будує набір FFmpeg-спроб і починає передавати JPEG-кадри в broadcast bus.
 6. Коли останній клієнт від'єднується, FFmpeg process вбивається, камера звільняється, pipeline знову паркується.
-
+7. LAN доступ можна ввімкнути або вимкнути під час роботи через TUI; при `LAN OFF` активні LAN stream-сесії обриваються одразу.
 

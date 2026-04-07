@@ -2,8 +2,8 @@
 
 Observans is a local-first camera streaming workspace for Linux and Windows.
 It exposes a browser-based monitoring panel, a startup terminal camera picker,
-and a lightweight MJPEG pipeline designed for simple LAN viewing and operator
-control.
+and a lightweight MJPEG pipeline designed for localhost and tailnet access by
+default, with operator-controlled LAN exposure when explicitly enabled.
 
 ## What Observans Provides
 
@@ -11,6 +11,8 @@ control.
 - A local web panel with live stream preview, browser-side recording, fullscreen
   viewing, and host telemetry.
 - MJPEG streaming over HTTP for low-friction local access.
+- Secure-by-default network exposure: `127.0.0.1` always, Tailscale best-effort,
+  LAN disabled unless the operator turns it on.
 - Runtime telemetry for CPU, RAM, temperature, battery, viewer count, restart
   count, frame age, and frame size.
 - A demand-driven capture model: the camera pipeline wakes when the first viewer
@@ -57,8 +59,12 @@ By default Observans serves the web UI on:
 http://127.0.0.1:8080/
 ```
 
-The browser is not opened automatically. Observans prints its listening address
-to the console and waits for viewers to connect.
+If Tailscale is available on the host, Observans also exposes a tailnet URL on
+the same port. LAN listeners stay disabled until the operator enables them
+through the TUI or starts with `--allow-lan`.
+
+The browser is not opened automatically. Observans prints or renders its active
+listener addresses and waits for viewers to connect.
 
 ## Runtime Model
 
@@ -67,6 +73,10 @@ to the console and waits for viewers to connect.
 - In a non-interactive launch, the picker is skipped automatically.
 - `--device auto` resolves the first available camera for the current platform.
 - The capture backend is FFmpeg-based: `v4l2` on Linux and `dshow` on Windows.
+- The web layer binds to `127.0.0.1` and, when available, the machine's
+  Tailscale IPv4. LAN is off by default.
+- During an interactive run, the dashboard hotkey `L` toggles LAN listeners on
+  and off without restarting the process.
 - The capture process is idle until a viewer opens the stream, which helps keep
   the camera released when the system is unattended.
 
@@ -92,6 +102,7 @@ observans [OPTIONS]
 --fps <FPS>                    default: 30
 --input-format <INPUT_FORMAT>  auto | mjpeg | yuyv422 | uyvy422 | nv12 | h264
 --no-camera-select
+--allow-lan
 ```
 
 Example:

@@ -20,17 +20,19 @@
     +--> SharedLogBuffer + tracing layer
     +--> SharedMetrics
     +--> ClientGate
+    +--> SharedNetworkPolicy
     +--> spawn_dashboard()
     +--> spawn_system_sampler()
     +--> start_capture()        
     +--> serve()             
 ```
 
-Після старту система розходиться на три незалежні напрями:
+Після старту система розходиться на кілька незалежних напрямів:
 
-- `observans-web` приймає HTTP-запити
+- `observans-web` менеджить loopback, tailscale і за потреби LAN listeners
 - `observans-core::metrics` раз на секунду оновлює system telemetry
 - `observans-core::capture` чекає на підключення глядача і тільки тоді запускає FFmpeg
+- `observans-core::network` тримає shared network policy для TUI і web runtime
 
 ## Ключова ідея поточної реалізації
 
@@ -61,9 +63,26 @@ Startup збирається навколо [`observans-core/src/config.rs`](../
 - перевірка interactive terminal
 - пошук FFmpeg
 - bootstrap вибору камери
+- стартовий network policy через `--allow-lan`
 - фінальний `clap` parse
 
 Bootstrap picker мешкає у [`observans-core/src/bootstrap.rs`](../../../../../observans-core/src/bootstrap.rs), а TUI picker/dashboard - у [`observans-core/src/tui.rs`](../../../../../observans-core/src/tui.rs).
+
+### 1.5. Network policy
+
+[`observans-core/src/network.rs`](../../../../../observans-core/src/network.rs) централізує мережеву модель:
+
+- `SharedNetworkPolicy` з runtime прапором `lan_enabled`
+- discovery Tailscale IPv4 через `tailscale ip -4`
+- discovery private IPv4 адрес хоста для LAN listener-ів
+- побудову бажаного набору listener-ів
+- peer ACL класифікацію для `loopback`, `tailscale`, `private-lan`
+
+Default поведінка fail-closed:
+
+- `127.0.0.1:<port>` слухається завжди
+- `Tailscale_IP:<port>` підіймається best-effort, якщо адреса знайдена
+- private LAN listeners не відкриваються, поки оператор явно не ввімкне LAN
 
 ### 2. Inventory + probe
 
@@ -119,6 +138,21 @@ Capture не живе в async runtime. Він працює в окремому 
 - `metrics: SharedMetrics`
 - `gate: Arc<ClientGate>`
 - `config: Config`
+- `network: SharedNetworkPolicy`
+
+`serve()` тепер не працює як один `TcpListener`. Поточний web runtime:
+
+- завжди тримає loopback listener
+- best-effort підіймає tailscale listener
+- додає або прибирає LAN listeners під час роботи, коли policy змінюється
+- додає `ListenerKind` у request context
+- перевіряє peer ACL перед `/`, `/metrics` і `/stream`
+
+При `LAN -> OFF` web layer:
+
+- зупиняє accept на LAN listeners
+- одразу обриває активні LAN `/stream` сесії через watch-based policy signal
+- не чіпає loopback і tailscale viewers
 
 ### 5. Metrics, sensors і logs
 
@@ -173,6 +207,11 @@ browser opens /stream
   -> ClientGate::add_client()
   -> capture thread wakes up
 
+operator presses L in TUI
+  -> SharedNetworkPolicy::toggle_lan()
+  -> web listener manager reconciles listeners
+  -> active LAN /stream sessions terminate immediately if policy became OFF
+
 browser closes /stream
   -> ClientGuard::drop()
   -> AppState::client_disconnected()
@@ -195,6 +234,7 @@ sysinfo + platform sensor readers
 | Частина | Тип виконання |
 | --- | --- |
 | Axum server | async tokio runtime |
+| listener manager | async tokio runtime |
 | `/stream` handler на клієнта | async task |
 | system sampler | async task |
 | dashboard | окремий OS thread |

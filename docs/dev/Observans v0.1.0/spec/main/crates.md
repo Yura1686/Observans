@@ -25,10 +25,11 @@ Cargo workspace
 3. створює `SharedLogBuffer`
 4. ініціалізує tracing і вбудований UI log layer
 5. створює `Shutdown`, `SharedMetrics`, frame bus і `ClientGate`
-6. запускає signal listener для `Ctrl+C`
-7. за потреби запускає dashboard
-8. запускає system sampler і capture supervisor
-9. підіймає web server
+6. створює `SharedNetworkPolicy`
+7. запускає signal listener для `Ctrl+C`
+8. за потреби запускає dashboard
+9. запускає system sampler і capture supervisor
+10. підіймає web server
 
 ### `src/log_capture.rs`
 
@@ -65,6 +66,7 @@ Cargo workspace
 - inventory
 - capture
 - metrics
+- network
 - probe
 - logs
 - shutdown
@@ -83,13 +85,13 @@ Cargo workspace
 | `--fps` | `30` |
 | `--input-format` | `auto` |
 | `--no-camera-select` | `false` |
+| `--allow-lan` | `false` |
 
 Корисні helper methods:
 
 - `platform_name()`
 - `capture_format()`
 - `platform_default_device()`
-- `bind_addr()`
 - `capture_backend_label()`
 
 ### `observans-core/src/bootstrap.rs`
@@ -222,6 +224,23 @@ Best-effort platform sensors:
 
 Простий shared shutdown primitive на `AtomicBool + Notify`.
 
+### `observans-core/src/network.rs`
+
+Мережевий shared state і policy helpers:
+
+- `SharedNetworkPolicy`
+- `ListenerKind`
+- `ListenerBinding`
+- discovery Tailscale IPv4 і private LAN IPv4
+- builder бажаного набору listener-ів
+- peer ACL rules для `loopback`, `tailscale`, `lan`
+
+Default policy:
+
+- loopback listener завжди активний
+- tailscale listener best-effort
+- LAN вимкнений, поки не передано `--allow-lan` або не натиснуто `L` у dashboard
+
 ### `observans-core/src/tui.rs`
 
 Тут зібрано дві різні terminal-ролі:
@@ -232,9 +251,10 @@ Best-effort platform sensors:
 Dashboard показує:
 
 - endpoints
+- `LAN access: OFF/ON`
 - telemetry snapshot
 - event feed із log buffer
-- hotkeys для graceful exit
+- hotkeys для graceful exit і runtime LAN toggle
 
 ## `observans-web`
 
@@ -244,9 +264,17 @@ HTTP composition:
 
 - `AppState`
 - `app()`
+- `app_for_listener()`
 - `serve()`
 - `root()`
 - `metrics()`
+
+Поточний runtime:
+
+- менеджить кілька listener-ів замість одного `0.0.0.0`
+- тримає `ListenerKind` у request context
+- робить peer ACL перед усіма routes
+- додає або прибирає LAN listeners на runtime policy change
 
 ### `observans-web/src/stream.rs`
 
@@ -258,6 +286,7 @@ MJPEG endpoint.
 - `ClientGuard` синхронізує connect/disconnect із `ClientGate`
 - keepalive comment раз на секунду дає змогу швидше виявити мертвий TCP client
 - `RecvError::Lagged` збільшує `queue_drops`
+- active LAN streams закриваються одразу, коли policy переходить у `LAN OFF`
 
 ### `observans-web/src/ui.rs`
 
@@ -300,6 +329,6 @@ Twilight visual system:
 
 Важливі тести, які вже є в repo:
 
-- `observans-web/tests/http.rs` - HTTP contracts для `/`, `/metrics`, `/stream`
+- `observans-web/tests/http.rs` - HTTP contracts для `/`, `/metrics`, `/stream`, ACL і runtime LAN toggle
 - `tests/release_contracts.rs` - manifest, installer block, workflow contracts
-- unit tests у `bootstrap.rs`, `capture.rs`, `platform.rs`, `logs.rs`, `metrics.rs`, `tui.rs`
+- unit tests у `bootstrap.rs`, `capture.rs`, `platform.rs`, `logs.rs`, `metrics.rs`, `network.rs`, `tui.rs`

@@ -2,6 +2,7 @@ use crate::camera_inventory::CameraInfo;
 use crate::config::Config;
 use crate::logs::{LogLevel, SharedLogBuffer};
 use crate::metrics::{MetricsSnapshot, SharedMetrics};
+use crate::network::{ListenerBinding, NetworkSnapshot, SharedNetworkPolicy};
 use crate::shutdown::Shutdown;
 use anyhow::{anyhow, Result};
 use crossterm::cursor::{Hide, MoveTo, Show};
@@ -14,9 +15,6 @@ use crossterm::terminal::{
 };
 use crossterm::{execute, queue};
 use std::io::{self, IsTerminal, Write};
-use std::net::IpAddr;
-use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
@@ -38,6 +36,7 @@ pub struct DashboardContext {
     pub config: Config,
     pub metrics: SharedMetrics,
     pub logs: SharedLogBuffer,
+    pub network: SharedNetworkPolicy,
     pub shutdown: Shutdown,
 }
 
@@ -220,6 +219,20 @@ fn run_dashboard(context: DashboardContext) -> Result<()> {
                     context.shutdown.trigger();
                     break;
                 }
+                Event::Key(key)
+                    if key.kind != KeyEventKind::Release
+                        && matches!(key.code, KeyCode::Char('l') | KeyCode::Char('L')) =>
+                {
+                    let lan_enabled = context.network.toggle_lan();
+                    context.logs.push(
+                        LogLevel::Info,
+                        "NET",
+                        format!(
+                            "LAN access {}",
+                            if lan_enabled { "enabled" } else { "disabled" }
+                        ),
+                    );
+                }
                 _ => {}
             }
         }
@@ -283,7 +296,8 @@ fn picker_lines(items: &[MenuItem], cursor: usize, width: usize) -> Vec<StyledLi
 fn dashboard_lines(context: &DashboardContext, width: usize) -> Vec<StyledLine> {
     let metrics = context.metrics.snapshot();
     let logs = context.logs.snapshot(LOG_LINES);
-    let urls = stream_urls(&context.config);
+    let network = context.network.snapshot();
+    let urls = render_stream_urls(&network);
     let mut lines = Vec::new();
 
     push_banner(&mut lines, width, "OBSERVANS");
@@ -292,6 +306,20 @@ fn dashboard_lines(context: &DashboardContext, width: usize) -> Vec<StyledLine> 
     for url in &urls {
         push_status_line(&mut lines, width, LogLevel::Ok, "WEB", url);
     }
+    push_status_line(
+        &mut lines,
+        width,
+        if network.lan_enabled {
+            LogLevel::Warn
+        } else {
+            LogLevel::Ok
+        },
+        "NET",
+        &format!(
+            "LAN access: {}",
+            if network.lan_enabled { "ON" } else { "OFF" }
+        ),
+    );
     push_status_line(
         &mut lines,
         width,
@@ -333,7 +361,7 @@ fn dashboard_lines(context: &DashboardContext, width: usize) -> Vec<StyledLine> 
     push_inner_line(
         &mut lines,
         width,
-        "CTRL+C graceful shutdown    Q / ESC exit dashboard and stop server",
+        "CTRL+C graceful shutdown    L toggle LAN    Q / ESC exit dashboard and stop server",
         Color::DarkGrey,
     );
     push_section_end(&mut lines, width);
@@ -442,63 +470,8 @@ fn dashboard_metrics(metrics: &MetricsSnapshot, warn_count: u64, error_count: u6
     ]
 }
 
-fn stream_urls(config: &Config) -> Vec<String> {
-    render_stream_urls(config.port, tailscale_ip())
-}
-
-fn render_stream_urls(port: u16, tailscale_ip: Option<IpAddr>) -> Vec<String> {
-    let mut urls = vec![format!("http://127.0.0.1:{port}/")];
-
-    if let Some(ip) = tailscale_ip {
-        urls.push(format!("http://{ip}:{port}/"));
-    }
-
-    urls
-}
-
-fn tailscale_ip() -> Option<IpAddr> {
-    for command in tailscale_command_candidates() {
-        if let Some(ip) = tailscale_ip_from_command(&command) {
-            return Some(ip);
-        }
-    }
-
-    None
-}
-
-fn tailscale_command_candidates() -> Vec<PathBuf> {
-    let candidates = vec![PathBuf::from("tailscale")];
-
-    #[cfg(windows)]
-    {
-        let mut candidates = candidates;
-        for env_name in ["ProgramFiles", "ProgramFiles(x86)"] {
-            if let Some(base) = std::env::var_os(env_name) {
-                candidates.push(PathBuf::from(base).join("Tailscale").join("tailscale.exe"));
-            }
-        }
-
-        return candidates;
-    }
-
-    #[cfg(not(windows))]
-    candidates
-}
-
-fn tailscale_ip_from_command(command: &Path) -> Option<IpAddr> {
-    let output = Command::new(command).args(["ip", "-4"]).output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-
-    parse_tailscale_ip_output(&String::from_utf8_lossy(&output.stdout))
-}
-
-fn parse_tailscale_ip_output(text: &str) -> Option<IpAddr> {
-    text.lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .and_then(|line| line.parse().ok())
+fn render_stream_urls(snapshot: &NetworkSnapshot) -> Vec<String> {
+    snapshot.bindings.iter().map(ListenerBinding::url).collect()
 }
 
 fn push_banner(lines: &mut Vec<StyledLine>, width: usize, title: &str) {
@@ -715,8 +688,9 @@ impl Drop for TerminalGuard {
 
 #[cfg(test)]
 mod tests {
-    use super::{center, fit, framed, pad_to_width, parse_tailscale_ip_output, render_stream_urls};
-    use std::net::{IpAddr, Ipv4Addr};
+    use super::{center, fit, framed, pad_to_width, render_stream_urls};
+    use crate::network::{ListenerBinding, ListenerKind, NetworkSnapshot};
+    use std::net::{Ipv4Addr, SocketAddr};
 
     #[test]
     fn fit_truncates_without_wrapping() {
@@ -742,23 +716,24 @@ mod tests {
     }
 
     #[test]
-    fn stream_urls_keep_loopback_and_tailscale_only() {
-        let urls = render_stream_urls(
-            8080,
-            Some(IpAddr::V4(Ipv4Addr::new(100, 64, 12, 34))),
-        );
+    fn stream_urls_render_active_bindings_only() {
+        let urls = render_stream_urls(&NetworkSnapshot {
+            lan_enabled: false,
+            bindings: vec![
+                ListenerBinding {
+                    kind: ListenerKind::Loopback,
+                    addr: SocketAddr::from((Ipv4Addr::LOCALHOST, 8080)),
+                },
+                ListenerBinding {
+                    kind: ListenerKind::Tailscale,
+                    addr: SocketAddr::from((Ipv4Addr::new(100, 64, 12, 34), 8080)),
+                },
+            ],
+        });
 
         assert_eq!(
             urls,
             vec!["http://127.0.0.1:8080/", "http://100.64.12.34:8080/"]
         );
-    }
-
-    #[test]
-    fn parses_first_tailscale_ipv4_from_cli_output() {
-        let output = "100.64.12.34\n";
-        let ip = parse_tailscale_ip_output(output);
-
-        assert_eq!(ip, Some(IpAddr::V4(Ipv4Addr::new(100, 64, 12, 34))));
     }
 }

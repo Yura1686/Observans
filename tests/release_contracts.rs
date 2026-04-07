@@ -102,9 +102,7 @@ fn release_workflow_uses_main_branch_rolling_release() {
     assert!(workflow.contains("- main"));
     assert!(workflow.contains("rolling-main"));
     assert!(workflow.contains("gh release create rolling-main"));
-    assert!(workflow.contains(
-        "smoke/linux/Observans-linux-x64/_observans_runtime/bin/observans"
-    ));
+    assert!(workflow.contains("smoke/linux/Observans-linux-x64/_observans_runtime/bin/observans"));
     assert!(!workflow.contains("tags:"));
     assert!(!workflow.contains(".sha256"));
 }

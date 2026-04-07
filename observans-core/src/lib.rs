@@ -4,6 +4,7 @@ pub mod capture;
 pub mod config;
 pub mod logs;
 pub mod metrics;
+pub mod network;
 pub mod platform;
 pub mod probe;
 pub mod runtime;
@@ -17,6 +18,10 @@ pub use capture::start_capture;
 pub use config::Config;
 pub use logs::{LogEntry, LogLevel, LogSnapshot, SharedLogBuffer};
 pub use metrics::{spawn_system_sampler, MetricsSnapshot, SharedMetrics};
+pub use network::{
+    build_desired_bindings, discover_desired_bindings, is_private_lan_ip, is_tailscale_ip,
+    ListenerBinding, ListenerKind, NetworkSnapshot, SharedNetworkPolicy,
+};
 pub use probe::{probe_dshow, probe_v4l2, CameraMode, ProbeResult, ResolvedCaptureParams};
 pub use shutdown::Shutdown;
 pub use tui::{choose_camera, spawn_dashboard, terminal_is_interactive, DashboardContext};

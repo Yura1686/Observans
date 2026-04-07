@@ -4,7 +4,7 @@ use anyhow::Result;
 use observans_bus::{create_bus, ClientGate};
 use observans_core::{
     spawn_dashboard, spawn_system_sampler, start_capture, terminal_is_interactive, Config,
-    DashboardContext, LogLevel, SharedLogBuffer, SharedMetrics, Shutdown,
+    DashboardContext, LogLevel, SharedLogBuffer, SharedMetrics, SharedNetworkPolicy, Shutdown,
 };
 use observans_web::{serve, AppState};
 use tracing::info;
@@ -42,6 +42,7 @@ async fn main() -> Result<()> {
 
     let shutdown = Shutdown::new();
     let metrics = SharedMetrics::new(&config);
+    let network = SharedNetworkPolicy::new(config.port, config.allow_lan);
     let (frame_tx, _frame_rx) = create_bus(4);
     logs.push(
         LogLevel::Ok,
@@ -65,6 +66,7 @@ async fn main() -> Result<()> {
         config: config.clone(),
         metrics: metrics.clone(),
         logs: logs.clone(),
+        network: network.clone(),
         shutdown: shutdown.clone(),
     });
 
@@ -76,9 +78,9 @@ async fn main() -> Result<()> {
         gate.clone(),
     );
 
-    let state = AppState::new(frame_tx, metrics, config, gate);
+    let state = AppState::new(frame_tx, metrics, config, gate, network);
     info!("observans runtime initialised");
-    let result = serve(state.bind_addr(), state, shutdown.clone()).await;
+    let result = serve(state, shutdown.clone()).await;
     shutdown.trigger();
 
     if let Some(handle) = dashboard {

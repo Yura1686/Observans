@@ -19,6 +19,8 @@ Observans provides a local camera streaming workflow with:
 3. Run `observans.exe`.
 4. Watch the console for the local URL, typically `http://127.0.0.1:8080/`.
 5. Open that URL in your browser.
+6. If Tailscale is installed and connected, you can also use the displayed
+   Tailscale URL from another device in your tailnet.
 
 ### Linux
 
@@ -27,6 +29,8 @@ Observans provides a local camera streaming workflow with:
 3. Run `Observans.sh`.
 4. Watch the console for the local URL, typically `http://127.0.0.1:8080/`.
 5. Open that URL in your browser.
+6. If Tailscale is installed and connected, you can also use the displayed
+   Tailscale URL from another device in your tailnet.
 
 ## Runtime Notes
 
@@ -34,6 +38,10 @@ Observans provides a local camera streaming workflow with:
 - The startup camera picker appears only in an interactive terminal session.
 - If launched without a TTY, Observans starts directly with the configured or
   auto-resolved device.
+- By default Observans binds only to `127.0.0.1` and, when available, the
+  machine's Tailscale IPv4.
+- LAN access is disabled by default. In the interactive dashboard you can press
+  `L` to toggle LAN listeners at runtime, or start with `--allow-lan`.
 - Capture starts when a viewer connects and stops again when all viewers leave.
 
 ## Useful Flags
@@ -46,6 +54,7 @@ Observans provides a local camera streaming workflow with:
 --fps <FPS>
 --input-format <INPUT_FORMAT>
 --no-camera-select
+--allow-lan
 ```
 
 Use `Observans.sh --help` on Linux or `observans.exe --help` on Windows for the

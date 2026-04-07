@@ -6,8 +6,6 @@ use crate::tui::{choose_camera, terminal_is_interactive};
 use anyhow::Result;
 use clap::error::ErrorKind;
 use clap::Parser;
-use std::net::SocketAddr;
-
 #[derive(Debug, Clone, Parser)]
 #[command(
     name = "observans",
@@ -36,6 +34,8 @@ pub struct Config {
     pub input_format: String,
     #[arg(long, default_value_t = false)]
     pub no_camera_select: bool,
+    #[arg(long, default_value_t = false)]
+    pub allow_lan: bool,
 }
 
 impl Config {
@@ -85,10 +85,6 @@ impl Config {
     pub fn platform_default_device(&self) -> &'static str {
         default_device_for(self.platform_name())
             .expect("unsupported platform should be rejected during startup")
-    }
-
-    pub fn bind_addr(&self) -> SocketAddr {
-        SocketAddr::from(([0, 0, 0, 0], self.port))
     }
 
     pub fn capture_backend_label(&self) -> String {
