@@ -224,8 +224,6 @@ gate.wait_for_clients()
 
 ## Shutdown Flow
 
-Поточний shutdown уже не описується як "процес просто вмирає":
-
 ```text
     Ctrl+C або Q/Esc у dashboard
     |

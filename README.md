@@ -1,9 +1,44 @@
 # Observans
 
-Observans is a local-first camera streaming workspace for Linux and Windows.
-It exposes a browser-based monitoring panel, a startup terminal camera picker,
-and a lightweight MJPEG pipeline designed for localhost and tailnet access by
-default, with operator-controlled LAN exposure when explicitly enabled.
+Observans is a local-first camera streaming workspace for Linux and Windows,
+currently focused on the `v0.1.0` release line. It combines a browser-based
+monitoring panel, a startup terminal camera picker, and an MJPEG pipeline
+designed for localhost and tailnet access by default, with operator-controlled
+LAN exposure when explicitly enabled.
+
+## Preview
+
+<div align="center">
+  <img src="./docs/assets/Observans v0.1.0/core/ui-desing/Screenshot_03.png" alt="Observans browser UI" width="920">
+</div>
+
+<p align="center">
+  <sub>Browser UI</sub>
+</p>
+
+<br>
+
+<div align="center">
+  <img src="./docs/assets/Observans v0.1.0/core/tui-desing/Screenshot_02.png" alt="Observans startup camera picker" width="920">
+</div>
+
+<p align="center">
+  <sub>Startup camera picker</sub>
+</p>
+
+<br>
+
+<div align="center">
+  <img src="./docs/assets/Observans v0.1.0/core/tui-desing/Screenshot_01.png" alt="Observans live dashboard" width="920">
+</div>
+
+<p align="center">
+  <sub>Live TUI dashboard</sub>
+</p>
+
+<p align="center">
+  <sub>Browser UI, startup camera picker, and live TUI dashboard from the current <code>Observans v0.1.0</code> workspace.</sub>
+</p>
 
 ## What Observans Provides
 

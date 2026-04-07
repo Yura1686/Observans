@@ -1,243 +1,175 @@
-# Архітектура Observans
+# Архітектура Observans v0.1.0
 
-- Date:   **2026-04-07**
+- Date: **2026-04-07**
 - Status: **Затверджено**
-- Note:   **Актуалізований файл документації для поточного стану `architecture Observans v0.1.0`.** 
+- Note: **Актуалізований файл документації для поточного стану `architecture Observans v0.1.0`.**
 
-## Загальна картина
+## Загальний опис
 
-```text
-    terminal / CLI
-    |
-    v
-    Config::from_args_with_bootstrap()
-    |
-    +--> camera inventory + TUI picker
-    |
-    v
-    main()
-    |
-    +--> SharedLogBuffer + tracing layer
-    +--> SharedMetrics
-    +--> ClientGate
-    +--> SharedNetworkPolicy
-    +--> spawn_dashboard()
-    +--> spawn_system_sampler()
-    +--> start_capture()        
-    +--> serve()             
-```
+Запуск проходить два послідовних етапи, після чого система розходиться на незалежні підсистеми:
 
-Після старту система розходиться на кілька незалежних напрямів:
+**Етап 1 — bootstrap**
 
-- `observans-web` менеджить loopback, tailscale і за потреби LAN listeners
-- `observans-core::metrics` раз на секунду оновлює system telemetry
-- `observans-core::capture` чекає на підключення глядача і тільки тоді запускає FFmpeg
-- `observans-core::network` тримає shared network policy для TUI і web runtime
+`Config::from_args_with_bootstrap()` визначає платформу, знаходить FFmpeg, збирає camera inventory і запускає TUI picker.
 
-## Ключова ідея поточної реалізації
+**Етап 2 — main()**
 
-Observans тепер побудований навколо **viewer-driven capture**:
+`main()` ініціалізує shared state і розпаровує runtime:
+
+- `SharedLogBuffer` + tracing layer
+- `SharedMetrics`
+- `ClientGate`
+- `SharedNetworkPolicy`
+- `spawn_dashboard()`
+- `spawn_system_sampler()`
+- `start_capture()`
+- `serve()`
+
+Після старту `observans-web` менеджить loopback, Tailscale і за потреби LAN listeners; `observans-core::capture` паркується до першого клієнта.
+
+## Ключова ідея
+
+Observans побудований навколо **viewer-driven capture**:
 
 - без клієнтів камера не захоплюється
 - перший клієнт будить capture-thread
 - останній клієнт зупиняє FFmpeg і звільняє пристрій
 
-Цю поведінку реалізує [`observans-bus/src/lib.rs`](../../../../../observans-bus/src/lib.rs) через `ClientGate`.
+Цю поведінку реалізує `ClientGate` у [`observans-bus/src/lib.rs`](../../../../../observans-bus/src/lib.rs).
 
 ## Workspace і ролі crates
 
 | Crate | Роль |
-| --- | --- |
+|---|---|
 | `observans` | root binary: startup orchestration, tracing, shutdown wiring |
 | `observans-core` | config, platform logic, camera inventory, probe, capture, metrics, TUI |
 | `observans-bus` | broadcast bus для JPEG-кадрів і `ClientGate` |
 | `observans-web` | axum router, `/stream`, `/metrics`, embedded UI |
 
-## Головні підсистеми
+## Підсистеми
 
 ### 1. Startup і config
 
-Startup збирається навколо [`observans-core/src/config.rs`](../../../../../observans-core/src/config.rs):
+[`observans-core/src/config.rs`](../../../../../observans-core/src/config.rs) виконує:
 
 - визначення платформи
-- перевірка interactive terminal
+- перевірку interactive terminal
 - пошук FFmpeg
 - bootstrap вибору камери
 - стартовий network policy через `--allow-lan`
 - фінальний `clap` parse
 
-Bootstrap picker мешкає у [`observans-core/src/bootstrap.rs`](../../../../../observans-core/src/bootstrap.rs), а TUI picker/dashboard - у [`observans-core/src/tui.rs`](../../../../../observans-core/src/tui.rs).
+Bootstrap picker — [`observans-core/src/bootstrap.rs`](../../../../../observans-core/src/bootstrap.rs).  
+TUI picker/dashboard — [`observans-core/src/tui.rs`](../../../../../observans-core/src/tui.rs).
 
-### 1.5. Network policy
+### 2. Network policy
 
-[`observans-core/src/network.rs`](../../../../../observans-core/src/network.rs) централізує мережеву модель:
-
-- `SharedNetworkPolicy` з runtime прапором `lan_enabled`
-- discovery Tailscale IPv4 через `tailscale ip -4`
-- discovery private IPv4 адрес хоста для LAN listener-ів
-- побудову бажаного набору listener-ів
-- peer ACL класифікацію для `loopback`, `tailscale`, `private-lan`
+[`observans-core/src/network.rs`](../../../../../observans-core/src/network.rs) централізує мережеву модель через `SharedNetworkPolicy`.
 
 Default поведінка fail-closed:
 
-- `127.0.0.1:<port>` слухається завжди
-- `Tailscale_IP:<port>` підіймається best-effort, якщо адреса знайдена
-- private LAN listeners не відкриваються, поки оператор явно не ввімкне LAN
+- `127.0.0.1:<port>` — слухається завжди
+- `Tailscale_IP:<port>` — підіймається best-effort, якщо адреса знайдена
+- LAN listeners — не відкриваються без явного дозволу оператора
 
-### 2. Inventory + probe
+При `LAN → OFF` web layer негайно зупиняє accept на LAN listeners і обриває активні LAN `/stream` сесії через watch-based policy signal.
 
-Observans розділяє два різні етапи:
+### 3. Inventory і probe
 
-- **inventory**: знайти список камер
-- **probe**: знайти підтримувані режими конкретної камери
+Два окремі етапи:
 
-Inventory:
+**Inventory** — знайти список камер:
 
 - Linux: `v4l2-ctl --list-devices`, fallback на сканування `/dev/video0..63`
 - Windows: `ffmpeg -list_devices true -f dshow -i dummy`, fallback на `ffmpeg -sources dshow`
 
-Probe:
+**Probe** — знайти підтримувані режими конкретної камери:
 
 - Linux: `v4l2-ctl --list-formats-ext`, fallback на `ffmpeg -f v4l2 -list_formats all`
 - Windows: `ffmpeg -f dshow -list_options true -i video=<name>`
 
-Ця логіка зосереджена у:
+Реалізація:
 
 - [`observans-core/src/camera_inventory.rs`](../../../../../observans-core/src/camera_inventory.rs)
 - [`observans-core/src/probe.rs`](../../../../../observans-core/src/probe.rs)
 
-### 3. Capture supervisor
+### 4. Capture supervisor
 
-Capture не живе в async runtime. Він працює в окремому OS thread:
+Capture працює в окремому OS thread, поза async runtime:
 
-- чекає на `gate.wait_for_clients()`
-- робить `resolve_device_candidates()`
-- запускає probe
-- формує пріоритетний список FFmpeg attempts
-- читає stdout FFmpeg
-- парсить JPEG stream
-- шле кадри в broadcast channel
+1. Чекає на `gate.wait_for_clients()`
+2. Виконує `resolve_device_candidates()`
+3. Запускає probe
+4. Формує пріоритетний список FFmpeg attempts
+5. Читає stdout FFmpeg, парсить JPEG stream, шле кадри в broadcast channel
 
-Якщо клієнти зникають, child-process убивається й обов'язково `wait()`-иться, щоб камера реально звільнилася.
+Якщо клієнти зникають — child-process убивається і обов'язково `wait()`-иться, щоб камера реально звільнилася. У `auto` режимі supervisor може пройти кілька кандидатів, якщо перший не дав жодного кадру.
 
-У `auto` режимі supervisor тепер може пройти кілька кандидатів камери, якщо перший Windows/Linux device id не зміг дати жодного кадру на старті.
+### 5. Web layer
 
-### 4. Web layer
-
-[`observans-web/src/lib.rs`](../../../../../observans-web/src/lib.rs) експонує три основні endpoints:
+[`observans-web/src/lib.rs`](../../../../../observans-web/src/lib.rs) — три endpoints:
 
 | Route | Призначення |
-| --- | --- |
+|---|---|
 | `/` | Вбудований HTML з inline CSS/JS |
 | `/metrics` | JSON snapshot метрик |
 | `/stream` | MJPEG multipart stream |
 
-`AppState` тримає:
+Web runtime одночасно тримає кілька listeners і перевіряє peer ACL (`loopback`, `tailscale`, `private-lan`) перед кожним запитом.
 
-- `tx: FrameSender`
-- `metrics: SharedMetrics`
-- `gate: Arc<ClientGate>`
-- `config: Config`
-- `network: SharedNetworkPolicy`
+### 6. Metrics, sensors і логи
 
-`serve()` тепер не працює як один `TcpListener`. Поточний web runtime:
+[`observans-core/src/metrics.rs`](../../../../../observans-core/src/metrics.rs) збирає:
 
-- завжди тримає loopback listener
-- best-effort підіймає tailscale listener
-- додає або прибирає LAN listeners під час роботи, коли policy змінюється
-- додає `ListenerKind` у request context
-- перевіряє peer ACL перед `/`, `/metrics` і `/stream`
+- CPU, RAM, temperature, battery
+- clients, uptime
+- actual / target FPS, frame age, average frame size
+- queue drops, restart count, stream input, capture backend
 
-При `LAN -> OFF` web layer:
+Допоміжні модулі:
 
-- зупиняє accept на LAN listeners
-- одразу обриває активні LAN `/stream` сесії через watch-based policy signal
-- не чіпає loopback і tailscale viewers
+- [`observans-core/src/sensors.rs`](../../../../../observans-core/src/sensors.rs) — best-effort sensor sampling
+- [`observans-core/src/logs.rs`](../../../../../observans-core/src/logs.rs) — tokenized runtime log buffer
+- [`src/log_capture.rs`](../../../../../src/log_capture.rs) — tracing layer для TUI
 
-### 5. Metrics, sensors і logs
+### 7. Shutdown
 
-Metrics збираються в [`observans-core/src/metrics.rs`](../../../../../observans-core/src/metrics.rs) і містять:
-
-- CPU / RAM
-- temperature / battery
-- clients / uptime
-- actual FPS / target FPS
-- frame age / average frame size
-- queue drops / restart count
-- stream input / capture backend
-
-Допоміжні підсистеми:
-
-- [`observans-core/src/sensors.rs`](../../../../../observans-core/src/sensors.rs): best-effort sensor sampling
-- [`observans-core/src/logs.rs`](../../../../../observans-core/src/logs.rs): tokenized runtime log buffer
-- [`src/log_capture.rs`](../../../../../src/log_capture.rs): tracing layer, що складає log entries для TUI
-
-### 6. Shutdown
-
-Graceful shutdown тепер централізований:
+Graceful shutdown через [`observans-core/src/shutdown.rs`](../../../../../observans-core/src/shutdown.rs):
 
 - `Ctrl+C` у процесі
 - `Ctrl+C`, `Q` або `Esc` у dashboard
 - `Shutdown::trigger()` будить waiters
 - axum завершується через `with_graceful_shutdown`
 
-Це реалізовано у [`observans-core/src/shutdown.rs`](../../../../../observans-core/src/shutdown.rs).
+## Потоки даних
+
+### Потік кадрів
+```
+camera → ffmpeg subprocess → stdout bytes → JpegStreamParser
+  → FrameSender (broadcast) → /stream receivers
+  → browser MJPEG source → canvas render loop
+```
 
 ## Потоки даних
 
 ### Потік кадрів
 
-```text
-camera
-  -> ffmpeg subprocess
-  -> stdout bytes
-  -> JpegStreamParser
-  -> FrameSender (broadcast)
-  -> /stream receivers
-  -> browser <img> MJPEG source
-  -> <canvas> render loop
-```
+Кадри рухаються від пристрою до браузера через односпрямований pipeline:
+
+1. FFmpeg читає з камери і пише JPEG-байти в stdout
+2. `JpegStreamParser` розбирає байтовий потік на окремі кадри
+3. `FrameSender` розсилає кадри через broadcast channel
+4. Кожен `/stream` handler отримує свою копію і відправляє клієнту
+5. Браузер рендерить MJPEG через canvas render loop
 
 ### Потік керування capture
 
-```text
-browser opens /stream
-  -> ClientGuard::new()
-  -> AppState::client_connected()
-  -> ClientGate::add_client()
-  -> capture thread wakes up
+Capture supervisor реагує на зміни кількості клієнтів і стану мережевої policy:
 
-operator presses L in TUI
-  -> SharedNetworkPolicy::toggle_lan()
-  -> web listener manager reconciles listeners
-  -> active LAN /stream sessions terminate immediately if policy became OFF
-
-browser closes /stream
-  -> ClientGuard::drop()
-  -> AppState::client_disconnected()
-  -> ClientGate::remove_client()
-  -> capture loop kills ffmpeg when count reaches zero
-```
+- **Перший клієнт підключається**   — `ClientGate::add_client()` будить capture thread, виконується probe і стартує FFmpeg
+- **Оператор вимикає LAN у TUI**    — `SharedNetworkPolicy::toggle_lan()` сигналізує web layer, активні LAN `/stream` сесії обриваються негайно
+- **Останній клієнт від'єднується** — `ClientGate::remove_client()` зупиняє FFmpeg, камера звільняється
 
 ### Потік телеметрії
 
-```text
-sysinfo + platform sensor readers
-  -> SharedMetrics
-  -> GET /metrics
-  -> app.js poll each second
-  -> DOM updates
-```
-
-## Паралелізм
-
-| Частина | Тип виконання |
-| --- | --- |
-| Axum server | async tokio runtime |
-| listener manager | async tokio runtime |
-| `/stream` handler на клієнта | async task |
-| system sampler | async task |
-| dashboard | окремий OS thread |
-| capture supervisor | окремий OS thread |
-| stderr collector | окремий OS thread |
-| FFmpeg stdout reader | окремий OS thread |
+`sysinfo` і platform sensors оновлюють `SharedMetrics` раз на секунду. `app.js` у браузері опитує `GET /metrics` і оновлює DOM без перезавантаження сторінки.

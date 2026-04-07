@@ -6,19 +6,19 @@
 
 ## Що це 
 
-**Observans** - локальний Rust-застосунок для стрімінгу відео з вебкамери у браузер через MJPEG. Поточна реалізація вже не тримає камеру постійно відкритою: capture-пайплайн паркується без глядачів і запускає FFmpeg тільки тоді, коли перший клієнт відкриває `/stream`.
+**Observans** - локальний Rust-застосунок для стрімінгу відео з вебкамери у браузер через MJPEG. 
 
-Основні можливості поточного стану:
+Основні можливості Observans v0.1.0:
 
-- startup camera picker у терміналі
-- live TUI dashboard з телеметрією, логами і runtime LAN toggle
-- on-demand capture через `ClientGate`
-- MJPEG streaming через `/stream`
-- browser UI з fullscreen, локальним записом і live-метриками
-- Linux (`v4l2`) і Windows (`dshow`) backend через FFmpeg
-- probe-логіка для підбору кращого формату, роздільності й FPS
-- secure-by-default network model: `127.0.0.1` завжди, Tailscale best-effort, LAN вимкнений за default
-- rolling release pipeline для Linux і Windows
+- Вибір камери при запуску
+- Live TUI dashboard — телеметрія, логи, перемикання LAN у runtime
+- On-demand capture через `ClientGate`
+- MJPEG-стрімінг на `/stream`
+- Browser UI — fullscreen, локальний запис, live-metrics
+- Linux `v4l2` та Windows `dshow` бекенди через FFmpeg
+- Probe-логіка для автоматичного вибору формату, роздільності та FPS
+- Secure-by-default мережева модель — `127.0.0.1` завжди, Tailscale best-effort, LAN вимкнений за замовчуванням
+- Rolling release pipeline для Linux та Windows
 
 ## Навігація
 
@@ -33,11 +33,11 @@
 
 ## Тематичні директорії spec
 
-| Директорія | Призначення |
-| --- | --- |
+| Директорія                             | Призначення                                                    |
+| -------------------------------------- | -------------------------------------------------------------- |
 | [../core/README.md](../core/README.md) | Навігація по матеріалах `main`, що стосуються `observans-core` |
-| [../web/README.md](../web/README.md) | Навігація по матеріалах `main`, що стосуються `observans-web` |
-| [../bus/README.md](../bus/README.md) | Навігація по матеріалах `main`, що стосуються `observans-bus` |
+| [../web/README.md](../web/README.md)   | Навігація по матеріалах `main`, що стосуються `observans-web`  |
+| [../bus/README.md](../bus/README.md)   | Навігація по матеріалах `main`, що стосуються `observans-bus`  |
 
 ## Поточна runtime-модель
 
